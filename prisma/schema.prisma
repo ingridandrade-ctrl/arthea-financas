@@ -1,0 +1,269 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Arthea Finanças — modelos de domínio
+// ═══════════════════════════════════════════════════════════════
+
+enum FinOwner {
+  PARTNER_A
+  PARTNER_B
+  COUPLE
+}
+
+enum FinAccountType {
+  CHECKING
+  SAVINGS
+  CASH
+  CREDIT_CARD
+  INVESTMENT
+  OTHER
+}
+
+enum FinCategoryKind {
+  INCOME
+  EXPENSE
+}
+
+enum FinTransactionType {
+  INCOME
+  EXPENSE
+  TRANSFER
+}
+
+enum FinRecurrenceFrequency {
+  WEEKLY
+  MONTHLY
+  YEARLY
+}
+
+enum FinInvoiceStatus {
+  OPEN
+  CLOSED
+  PAID
+  OVERDUE
+}
+
+model Household {
+  id             String                 @id @default(cuid())
+  email          String                 @unique
+  password       String
+  partnerAName   String                 @default("Pessoa A")
+  partnerBName   String                 @default("Pessoa B")
+  currency       String                 @default("BRL")
+  hideBalances   Boolean                @default(false)
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+  accounts       FinAccount[]
+  categories     FinCategory[]
+  transactions   FinTransaction[]
+  recurringRules FinRecurringRule[]
+  budgets        FinBudget[]
+  invoices       FinCreditCardInvoice[]
+  goals          FinGoal[]
+  settlements    FinSettlement[]
+}
+
+model FinAccount {
+  id              String                 @id @default(cuid())
+  householdId     String
+  household       Household              @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  name            String
+  type            FinAccountType         @default(CHECKING)
+  initialBalance  Float                  @default(0)
+  color           String                 @default("#6366f1")
+  icon            String?
+  archived        Boolean                @default(false)
+  creditLimit     Float?
+  closingDay      Int?
+  dueDay          Int?
+  owner           FinOwner               @default(COUPLE)
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+  transactions    FinTransaction[]       @relation("AccountTransactions")
+  transfersIn     FinTransaction[]       @relation("AccountTransfersIn")
+  recurringRules  FinRecurringRule[]     @relation("RecurringFromAccount")
+  invoices        FinCreditCardInvoice[]
+  invoicePayments FinCreditCardInvoice[] @relation("InvoicePayment")
+
+  @@index([householdId])
+}
+
+model FinCategory {
+  id             String             @id @default(cuid())
+  householdId    String
+  household      Household          @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  name           String
+  kind           FinCategoryKind
+  color          String             @default("#6366f1")
+  icon           String?
+  parentId       String?
+  parent         FinCategory?       @relation("FinCategoryTree", fields: [parentId], references: [id])
+  children       FinCategory[]      @relation("FinCategoryTree")
+  archived       Boolean            @default(false)
+  createdAt      DateTime           @default(now())
+  transactions   FinTransaction[]
+  recurringRules FinRecurringRule[]
+  budgets        FinBudget[]
+
+  @@index([householdId, kind])
+}
+
+model FinTransaction {
+  id                   String                @id @default(cuid())
+  householdId          String
+  household            Household             @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  type                 FinTransactionType
+  amount               Float
+  date                 DateTime
+  description          String
+  notes                String?
+  owner                FinOwner              @default(COUPLE)
+  paidByOwner          FinOwner?
+  splitRatio           Float?
+  paid                 Boolean               @default(true)
+  paidAt               DateTime?
+  accountId            String
+  account              FinAccount            @relation("AccountTransactions", fields: [accountId], references: [id])
+  toAccountId          String?
+  toAccount            FinAccount?           @relation("AccountTransfersIn", fields: [toAccountId], references: [id])
+  categoryId           String?
+  category             FinCategory?          @relation(fields: [categoryId], references: [id])
+  invoiceId            String?
+  invoice              FinCreditCardInvoice? @relation(fields: [invoiceId], references: [id])
+  recurringId          String?
+  recurring            FinRecurringRule?     @relation(fields: [recurringId], references: [id])
+  installmentGroupId   String?
+  installmentIndex     Int?
+  installmentTotal     Int?
+  installmentProjected Boolean               @default(false)
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+
+  @@index([householdId, date])
+  @@index([accountId])
+  @@index([categoryId])
+  @@index([installmentGroupId])
+  @@index([invoiceId])
+}
+
+model FinRecurringRule {
+  id              String                 @id @default(cuid())
+  householdId     String
+  household       Household              @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  name            String
+  type            FinTransactionType
+  amount          Float
+  description     String
+  notes           String?
+  owner           FinOwner               @default(COUPLE)
+  accountId       String
+  account         FinAccount             @relation("RecurringFromAccount", fields: [accountId], references: [id])
+  toAccountId     String?
+  categoryId      String?
+  category        FinCategory?           @relation(fields: [categoryId], references: [id])
+  frequency       FinRecurrenceFrequency @default(MONTHLY)
+  dayOfMonth      Int?
+  dayOfWeek       Int?
+  monthOfYear     Int?
+  startDate       DateTime
+  endDate         DateTime?
+  lastGeneratedAt DateTime?
+  active          Boolean                @default(true)
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+  transactions    FinTransaction[]
+
+  @@index([householdId, active])
+}
+
+model FinBudget {
+  id          String      @id @default(cuid())
+  householdId String
+  household   Household   @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  categoryId  String
+  category    FinCategory @relation(fields: [categoryId], references: [id])
+  amount      Float
+  month       String      @default("default")
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@unique([categoryId, month])
+  @@index([householdId])
+}
+
+model FinCreditCardInvoice {
+  id               String           @id @default(cuid())
+  householdId      String
+  household        Household        @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  accountId        String
+  account          FinAccount       @relation(fields: [accountId], references: [id])
+  year             Int
+  month            Int
+  closingDate      DateTime
+  dueDate          DateTime
+  paidAt           DateTime?
+  paymentAccountId String?
+  paymentAccount   FinAccount?      @relation("InvoicePayment", fields: [paymentAccountId], references: [id])
+  status           FinInvoiceStatus @default(OPEN)
+  notes            String?
+  transactions     FinTransaction[]
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  @@unique([accountId, year, month])
+  @@index([householdId, year, month])
+}
+
+model FinGoal {
+  id            String                @id @default(cuid())
+  householdId   String
+  household     Household             @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  name          String
+  targetAmount  Float
+  currentAmount Float                 @default(0)
+  targetDate    DateTime?
+  color         String                @default("#6366f1")
+  icon          String?
+  notes         String?
+  archived      Boolean               @default(false)
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+  contributions FinGoalContribution[]
+
+  @@index([householdId])
+}
+
+model FinGoalContribution {
+  id        String   @id @default(cuid())
+  goalId    String
+  goal      FinGoal  @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  amount    Float
+  date      DateTime
+  notes     String?
+  createdAt DateTime @default(now())
+
+  @@index([goalId])
+}
+
+model FinSettlement {
+  id          String    @id @default(cuid())
+  householdId String
+  household   Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  amount      Float
+  fromOwner   FinOwner
+  toOwner     FinOwner
+  date        DateTime
+  notes       String?
+  periodStart DateTime?
+  periodEnd   DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([householdId, date])
+}

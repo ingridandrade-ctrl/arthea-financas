@@ -1,0 +1,106 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  /* === Brand: Arthea (teal) === */
+  --color-brand: #1D7070;
+  --color-brand-dark: #0D4A4A;
+  --color-brand-soft: #E6F1F1;
+  --color-brand-foreground: #ffffff;
+
+  /* === Semantic tokens (light defaults) === */
+  --color-background: #ffffff;
+  --color-foreground: #0a0a0a;
+  --color-muted: #f5f5f5;
+  --color-muted-foreground: #737373;
+  --color-border: #e5e5e5;
+  --color-primary: #1D7070;
+  --color-primary-foreground: #ffffff;
+  --color-secondary: #f5f5f5;
+  --color-secondary-foreground: #0a0a0a;
+  --color-accent: #1D7070;
+  --color-accent-foreground: #ffffff;
+  --color-destructive: #ef4444;
+  --color-destructive-foreground: #ffffff;
+  --color-success: #22c55e;
+  --color-warning: #f59e0b;
+  --color-info: #0ea5e9;
+  --color-card: #ffffff;
+  --color-card-foreground: #0a0a0a;
+  --color-sidebar: #fafafa;
+  --color-popover: #ffffff;
+  --color-popover-foreground: #0a0a0a;
+
+  /* Partner colors (consistent across charts and avatars) */
+  --color-partner-a: #1D7070;
+  --color-partner-b: #C2410C;
+  --color-couple: #6366f1;
+
+  --radius: 0.5rem;
+  --font-sans: "Inter", system-ui, sans-serif;
+  --font-display: "Cormorant Garamond", Georgia, serif;
+}
+
+/* === Dark theme overrides === */
+.dark {
+  --color-background: #0B1414;
+  --color-foreground: #E6F1F1;
+  --color-muted: #182525;
+  --color-muted-foreground: #94A3A3;
+  --color-border: #1F2D2D;
+  --color-primary: #2BA0A0;
+  --color-primary-foreground: #04161B;
+  --color-secondary: #182525;
+  --color-secondary-foreground: #E6F1F1;
+  --color-accent: #2BA0A0;
+  --color-accent-foreground: #04161B;
+  --color-destructive: #f87171;
+  --color-destructive-foreground: #0B1414;
+  --color-success: #4ade80;
+  --color-warning: #fbbf24;
+  --color-info: #38bdf8;
+  --color-card: #0F1B1B;
+  --color-card-foreground: #E6F1F1;
+  --color-sidebar: #0A1212;
+  --color-popover: #131F1F;
+  --color-popover-foreground: #E6F1F1;
+
+  --color-partner-a: #2BA0A0;
+  --color-partner-b: #FB923C;
+  --color-couple: #818cf8;
+}
+
+@layer base {
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: var(--font-sans);
+  }
+  html.dark { color-scheme: dark; }
+  html { color-scheme: light; }
+}
+
+@keyframes arthea-shimmer {
+  0%   { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(29,112,112,0.06) 0%,
+    rgba(29,112,112,0.14) 40%,
+    rgba(29,112,112,0.06) 80%
+  );
+  background-size: 800px 100%;
+  animation: arthea-shimmer 1.6s infinite linear;
+  border-radius: 8px;
+}
+.dark .skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(43,160,160,0.08) 0%,
+    rgba(43,160,160,0.18) 40%,
+    rgba(43,160,160,0.08) 80%
+  );
+  background-size: 800px 100%;
+}
