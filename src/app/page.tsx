@@ -16,9 +16,9 @@ import { getSessionFromCookies, householdExists } from "@/lib/financas/session";
 export default async function FinancasLandingPage() {
   const session = getSessionFromCookies();
   if (session) redirect("/dashboard");
-  const exists = await householdExists();
-  const ctaHref = exists ? "/login" : "/setup";
-  const ctaLabel = exists ? "Entrar" : "Criar conta";
+  // Multi-tenant: sempre oferece cadastro e login
+  const ctaHref = "/cadastro";
+  const ctaLabel = "Criar conta";
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-background via-background to-muted/30">
@@ -35,12 +35,20 @@ export default async function FinancasLandingPage() {
               </p>
             </div>
           </div>
-          <Link
-            href={ctaHref}
-            className="text-sm px-4 py-2 rounded-lg bg-primary text-primary-foreground hover:opacity-90 font-medium"
-          >
-            {ctaLabel}
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link
+              href="/login"
+              className="text-sm px-4 py-2 rounded-lg border border-border hover:bg-muted font-medium text-muted-foreground hover:text-foreground"
+            >
+              Entrar
+            </Link>
+            <Link
+              href={ctaHref}
+              className="text-sm px-4 py-2 rounded-lg bg-primary text-primary-foreground hover:opacity-90 font-medium"
+            >
+              {ctaLabel}
+            </Link>
+          </div>
         </div>
       </header>
 
@@ -131,9 +139,7 @@ export default async function FinancasLandingPage() {
           Bora começar?
         </h2>
         <p className="text-muted-foreground mb-6">
-          {exists
-            ? "Sua conta já existe. Entra e segue do ponto que parou."
-            : "São 30 segundos pra criar a conta compartilhada do casal."}
+          São 30 segundos pra criar a conta compartilhada do casal.
         </p>
         <Link
           href={ctaHref}

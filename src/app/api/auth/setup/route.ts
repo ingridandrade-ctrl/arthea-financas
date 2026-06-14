@@ -47,6 +47,6 @@ export async function POST(req: Request) {
     },
   });
 
-  await setSessionCookie(household.id);
+  await setSessionCookie({ userId: null, householdId: household.id });
   return NextResponse.json({ ok: true });
 }

@@ -74,6 +74,13 @@ export function LoginForm() {
           >
             {loading ? "Entrando..." : "Entrar"}
           </button>
+
+          <p className="text-center text-sm text-muted-foreground">
+            Não tem conta?{" "}
+            <a href="/cadastro" className="text-primary hover:underline">
+              Criar conta
+            </a>
+          </p>
         </form>
       </div>
     </div>

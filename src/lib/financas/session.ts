@@ -32,15 +32,19 @@ function fromBase64url(input: string): Buffer {
 }
 
 export type FinSessionPayload = {
+  /** user id — null/missing em sessões legacy que eram só Household */
+  uid?: string;
+  /** household id — sempre presente. Em sessões legacy era o único dado */
   hid: string;
   iat: number;
   exp: number;
 };
 
-export function signSession(householdId: string): string {
+export function signSession(opts: { userId?: string | null; householdId: string }): string {
   const now = Math.floor(Date.now() / 1000);
   const payload: FinSessionPayload = {
-    hid: householdId,
+    uid: opts.userId ?? undefined,
+    hid: opts.householdId,
     iat: now,
     exp: now + MAX_AGE_SECONDS,
   };
@@ -73,8 +77,8 @@ export function verifySession(token: string | undefined | null): FinSessionPaylo
   }
 }
 
-export async function setSessionCookie(householdId: string) {
-  const token = signSession(householdId);
+export async function setSessionCookie(opts: { userId?: string | null; householdId: string }) {
+  const token = signSession(opts);
   cookies().set(COOKIE_NAME, token, {
     httpOnly: true,
     sameSite: "lax",
@@ -105,12 +109,31 @@ export async function getCurrentHousehold() {
   return prisma.household.findUnique({ where: { id: session.hid } });
 }
 
+export async function getCurrentUser() {
+  const session = getSessionFromCookies();
+  if (!session?.uid) return null;
+  return prisma.user.findUnique({
+    where: { id: session.uid },
+    include: {
+      memberships: {
+        include: { household: true },
+      },
+    },
+  });
+}
+
 export async function requireHousehold() {
   const household = await getCurrentHousehold();
   if (!household) {
     throw new HouseholdAuthError("Não autenticado");
   }
   return household;
+}
+
+export async function requireUser() {
+  const user = await getCurrentUser();
+  if (!user) throw new HouseholdAuthError("Não autenticado");
+  return user;
 }
 
 export class HouseholdAuthError extends Error {
