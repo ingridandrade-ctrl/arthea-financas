@@ -136,6 +136,53 @@ export async function requireUser() {
   return user;
 }
 
+export async function requireAdmin() {
+  const user = await getCurrentUser();
+  if (!user) throw new HouseholdAuthError("Não autenticado");
+  if (!user.isAdmin) throw new HouseholdAuthError("Acesso restrito a administradores");
+  return user;
+}
+
+/** Retorna a lista de emails admin configurados via env ARTHEA_ADMIN_EMAILS. */
+export function getAdminEmails(): string[] {
+  const raw = process.env.ARTHEA_ADMIN_EMAILS || "";
+  return raw
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+export function isAdminEmail(email: string): boolean {
+  return getAdminEmails().includes(email.toLowerCase().trim());
+}
+
+const IMPERSONATE_COOKIE = "financas_admin_session";
+
+/** Guarda a sessão original do admin antes de impersonar */
+export async function setImpersonationOriginCookie(originalToken: string) {
+  cookies().set(IMPERSONATE_COOKIE, originalToken, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: 60 * 60 * 2, // 2 horas
+  });
+}
+
+export function getImpersonationOriginToken(): string | null {
+  return cookies().get(IMPERSONATE_COOKIE)?.value || null;
+}
+
+export async function clearImpersonationOriginCookie() {
+  cookies().set(IMPERSONATE_COOKIE, "", {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: 0,
+  });
+}
+
 export class HouseholdAuthError extends Error {
   constructor(message: string) {
     super(message);

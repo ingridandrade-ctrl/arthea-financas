@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import bcryptjs from "bcryptjs";
 import { prisma } from "@/lib/prisma";
-import { setSessionCookie } from "@/lib/financas/session";
+import { setSessionCookie, isAdminEmail } from "@/lib/financas/session";
 import { ensureFinanceSchema } from "@/lib/financas/migrate";
 
 export async function POST(req: Request) {
@@ -37,6 +37,14 @@ export async function POST(req: Request) {
         { status: 403 }
       );
     }
+    // Sync isAdmin from env + bump lastLoginAt
+    const shouldBeAdmin = isAdminEmail(user.email);
+    if (user.isAdmin !== shouldBeAdmin || !user.lastLoginAt || Date.now() - user.lastLoginAt.getTime() > 60_000) {
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { isAdmin: shouldBeAdmin, lastLoginAt: new Date() },
+      });
+    }
     await setSessionCookie({ userId: user.id, householdId: user.memberships[0].householdId });
     return NextResponse.json({ ok: true });
   }
@@ -57,6 +65,8 @@ export async function POST(req: Request) {
       data: {
         email: household.email,
         password: household.password, // already hashed
+        isAdmin: isAdminEmail(household.email),
+        lastLoginAt: new Date(),
       },
     });
     await tx.householdMember.create({

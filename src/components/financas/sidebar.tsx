@@ -24,6 +24,7 @@ import {
   ChevronDown,
   ChevronRight,
   Receipt,
+  Crown,
 } from "lucide-react";
 
 type SubItem = { name: string; href: string; query?: Record<string, string>; icon?: any };
@@ -88,7 +89,7 @@ function buildHref(href: string, query?: Record<string, string>) {
   return `${href}?${qs}`;
 }
 
-export function FinancasSidebar() {
+export function FinancasSidebar({ isAdmin = false }: { isAdmin?: boolean }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -209,6 +210,20 @@ export function FinancasSidebar() {
           </span>
           <ThemeToggle />
         </div>
+        {isAdmin && (
+          <Link
+            href="/admin"
+            className={cn(
+              "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+              pathname === "/admin" || pathname?.startsWith("/admin/")
+                ? "bg-warning/15 text-warning border border-warning/30"
+                : "text-warning hover:bg-warning/10"
+            )}
+          >
+            <Crown className="w-4 h-4" />
+            Admin
+          </Link>
+        )}
         <Link
           href="/configuracoes"
           className={cn(
