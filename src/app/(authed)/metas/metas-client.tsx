@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { toast } from "@/components/financas/toaster";
+import { confirmDialog } from "@/components/ui/confirm-dialog";
 import { Plus, Pencil, Trash2, PiggyBank, Target, Archive, ArchiveRestore } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { PageHeader } from "@/components/financas/page-header";
@@ -44,7 +46,7 @@ export function MetasClient() {
   }, []);
 
   async function remove(id: string) {
-    if (!confirm("Excluir esta meta? Isso apaga também os aportes registrados.")) return;
+    const ok = await confirmDialog({ title: "Excluir esta meta?", description: "Os aportes registrados também serão apagados.", variant: "destructive", confirmLabel: "Excluir" }); if (!ok) return;
     await fetch(`/api/goals/${id}`, { method: "DELETE" });
     load();
   }
@@ -282,6 +284,7 @@ function GoalModal({
             <input
               required
               type="number"
+              inputMode="decimal"
               step="0.01"
               min="0.01"
               value={targetAmount}
@@ -294,7 +297,8 @@ function GoalModal({
               <label className="block text-sm font-medium mb-1">Valor já guardado</label>
               <input
                 type="number"
-                step="0.01"
+                inputMode="decimal"
+              step="0.01"
                 min="0"
                 value={currentAmount}
                 onChange={(e) => setCurrentAmount(e.target.value)}
@@ -406,7 +410,8 @@ function ContributeModal({
           <input
             required
             type="number"
-            step="0.01"
+            inputMode="decimal"
+              step="0.01"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
             placeholder="Use valor negativo para retirar"

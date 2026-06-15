@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { toast } from "@/components/financas/toaster";
+import { confirmDialog } from "@/components/ui/confirm-dialog";
 import { Plus, Trash2, ArrowRight, Users, Scale, HandCoins, TrendingDown, BarChart3, Receipt } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { PageHeader } from "@/components/financas/page-header";
@@ -117,7 +119,7 @@ export function CasalClient() {
   }, [period]);
 
   async function remove(id: string) {
-    if (!confirm("Excluir este acerto?")) return;
+    const ok = await confirmDialog({ title: "Excluir este acerto?", variant: "destructive", confirmLabel: "Excluir" }); if (!ok) return;
     await fetch(`/api/settlements/${id}`, { method: "DELETE" });
     load();
   }
@@ -601,6 +603,7 @@ function SettlementModal({
             <input
               required
               type="number"
+              inputMode="decimal"
               step="0.01"
               min="0.01"
               value={amount}

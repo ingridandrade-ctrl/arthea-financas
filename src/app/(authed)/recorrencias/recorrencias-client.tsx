@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { toast } from "@/components/financas/toaster";
+import { confirmDialog } from "@/components/ui/confirm-dialog";
 import { Plus, Pencil, Power, Trash2, Repeat, PlayCircle, ArrowDownCircle, ArrowUpCircle, ArrowLeftRight } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { PageHeader } from "@/components/financas/page-header";
@@ -72,7 +74,7 @@ export function RecorrenciasClient() {
   }
 
   async function remove(id: string) {
-    if (!confirm("Excluir esta recorrência?")) return;
+    const ok = await confirmDialog({ title: "Excluir esta recorrência?", description: "Os lançamentos já gerados continuam, mas a regra para de gerar novos.", variant: "destructive", confirmLabel: "Excluir" }); if (!ok) return;
     await fetch(`/api/recurring/${id}`, { method: "DELETE" });
     loadAll();
   }
@@ -82,7 +84,7 @@ export function RecorrenciasClient() {
     const res = await fetch("/api/recurring/run", { method: "POST" });
     const data = await res.json();
     setRunning(false);
-    alert(`${data.created || 0} lançamento(s) gerado(s).`);
+    toast.success(`${data.created || 0} lançamento(s) gerado(s)`);
     loadAll();
   }
 
@@ -321,10 +323,10 @@ function RuleModal({
       return;
     }
     if (!editing && typeof data.generated === "number" && data.generated > 0) {
-      alert(`Recorrência criada. ${data.generated} lançamento(s) já foram gerados em "Lançamentos".`);
+      toast.success("Recorrência criada", { description: `${data.generated} lançamento(s) já foram gerados em Lançamentos.` });
     }
     if (editing && typeof data.updatedTransactions === "number" && data.updatedTransactions > 0) {
-      alert(`Regra atualizada. ${data.updatedTransactions} lançamento(s) existente(s) também foram corrigidos.`);
+      toast.success("Regra atualizada", { description: `${data.updatedTransactions} lançamento(s) existente(s) também foram corrigidos.` });
     }
     onSaved();
   }
@@ -366,6 +368,7 @@ function RuleModal({
             <input
               required
               type="number"
+              inputMode="decimal"
               step="0.01"
               min="0.01"
               value={amount}

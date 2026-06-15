@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { toast } from "@/components/financas/toaster";
+import { confirmDialog } from "@/components/ui/confirm-dialog";
 import { Plus, Pencil, Archive, ArchiveRestore, Trash2, Wallet } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { PageHeader } from "@/components/financas/page-header";
@@ -56,7 +58,7 @@ export function ContasClient() {
   }, []);
 
   async function remove(id: string) {
-    if (!confirm("Excluir esta conta? Se houver lançamentos, ela será arquivada.")) return;
+    const ok = await confirmDialog({ title: "Excluir esta conta?", description: "Se houver lançamentos, vai ser arquivada em vez de excluída.", variant: "destructive", confirmLabel: "Excluir" }); if (!ok) return;
     await fetch(`/api/accounts/${id}`, { method: "DELETE" });
     load();
   }
@@ -383,7 +385,8 @@ function AccountModal({
           </label>
           <input
             type="number"
-            step="0.01"
+            inputMode="decimal"
+              step="0.01"
             value={initialBalance}
             onChange={(e) => setInitialBalance(parseFloat(e.target.value) || 0)}
             className="w-full px-3 py-2 rounded-lg border border-border bg-background"
@@ -399,7 +402,8 @@ function AccountModal({
               <label className="block text-sm font-medium mb-1">Limite</label>
               <input
                 type="number"
-                step="0.01"
+                inputMode="decimal"
+              step="0.01"
                 value={creditLimit}
                 onChange={(e) => setCreditLimit(e.target.value)}
                 className="w-full px-3 py-2 rounded-lg border border-border bg-background"

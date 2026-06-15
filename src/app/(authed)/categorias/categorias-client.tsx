@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { Plus, Pencil, Archive, ArchiveRestore, Trash2, Tags } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { PageHeader } from "@/components/financas/page-header";
+import { toast } from "@/components/financas/toaster";
+import { confirmDialog } from "@/components/ui/confirm-dialog";
 
 type Category = {
   id: string;
@@ -38,7 +40,13 @@ export function CategoriasClient() {
   }, []);
 
   async function remove(id: string) {
-    if (!confirm("Excluir esta categoria? Se houver lançamentos, ela será arquivada.")) return;
+    const ok = await confirmDialog({
+      title: "Excluir esta categoria?",
+      description: "Se houver lançamentos usando ela, vai ser arquivada em vez de excluída.",
+      variant: "destructive",
+      confirmLabel: "Excluir",
+    });
+    if (!ok) return;
     await fetch(`/api/categories/${id}`, { method: "DELETE" });
     load();
   }
@@ -57,9 +65,11 @@ export function CategoriasClient() {
     const data = await res.json().catch(() => ({}));
     if (res.ok) {
       if (data.created === 0) {
-        alert("Você já tem todas as categorias padrão.");
+        toast.info("Você já tem todas as categorias padrão.");
       } else {
-        alert(`Criadas ${data.created} categorias: ${(data.names || []).join(", ")}.`);
+        toast.success(`${data.created} categorias criadas`, {
+          description: (data.names || []).join(", "),
+        });
       }
       load();
     }
@@ -225,7 +235,7 @@ function CategoryRow({
         style={{ backgroundColor: category.color }}
       />
       <span className="text-sm">{category.name}</span>
-      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition">
+      <div className="flex items-center gap-0.5 md:opacity-0 md:group-hover:opacity-100 transition">
         <button
           onClick={onEdit}
           className="p-1 rounded text-muted-foreground hover:text-foreground"

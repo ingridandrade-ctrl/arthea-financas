@@ -159,6 +159,15 @@ export function DashboardClient() {
         </FilterGroup>
       </FilterBar>
 
+      <NarrativeHero
+        period={data.period.label}
+        expense={data.totals.expense}
+        prevExpense={data.previous.expense}
+        income={data.totals.income}
+        prevIncome={data.previous.income}
+        expensesByCategory={data.expensesByCategory}
+      />
+
       <div
         className={`grid grid-cols-1 md:grid-cols-2 ${
           data.household.hideBalances ? "lg:grid-cols-1" : "lg:grid-cols-4"
@@ -406,3 +415,73 @@ function OwnerRow({
   );
 }
 
+
+function NarrativeHero({
+  period,
+  expense,
+  prevExpense,
+  income,
+  prevIncome,
+  expensesByCategory,
+}: {
+  period: string;
+  expense: number;
+  prevExpense: number;
+  income: number;
+  prevIncome: number;
+  expensesByCategory: { name: string; amount: number; color: string }[];
+}) {
+  const fmt = (n: number) =>
+    n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+  // narrativa
+  let line1 = `Em ${cap(period)}, vocês gastaram ${fmt(expense)}`;
+  if (income > 0) line1 += ` e receberam ${fmt(income)}`;
+  line1 += ".";
+
+  let line2 = "";
+  if (prevExpense > 0) {
+    const pct = ((expense - prevExpense) / prevExpense) * 100;
+    if (Math.abs(pct) >= 5) {
+      line2 = pct > 0
+        ? `Está ${pct.toFixed(0)}% acima do mês passado.`
+        : `${Math.abs(pct).toFixed(0)}% a menos que o mês passado — parabéns.`;
+    } else {
+      line2 = "Em linha com o mês passado.";
+    }
+  }
+
+  const topCat = expensesByCategory[0];
+  const line3 = topCat
+    ? `Categoria que mais pesou: ${topCat.name} (${fmt(topCat.amount)}).`
+    : "";
+
+  return (
+    <div
+      className="bg-card border border-border rounded-2xl p-6 mb-4 relative overflow-hidden"
+      style={{
+        background:
+          "linear-gradient(135deg, color-mix(in srgb, var(--color-brand) 8%, var(--color-card)) 0%, var(--color-card) 60%)",
+      }}
+    >
+      <div className="relative z-10">
+        <p className="text-sm font-display tracking-tight text-foreground leading-snug">
+          {line1}
+        </p>
+        {line2 && <p className="text-sm text-muted-foreground mt-1">{line2}</p>}
+        {line3 && (
+          <p className="text-xs text-muted-foreground mt-2 flex items-center gap-1.5">
+            {topCat && (
+              <span
+                className="w-1.5 h-1.5 rounded-full inline-block"
+                style={{ backgroundColor: topCat.color }}
+              />
+            )}
+            {line3}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}

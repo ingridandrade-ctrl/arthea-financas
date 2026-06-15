@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Users, Home, Receipt, Wallet, CreditCard, Search, ExternalLink, Crown } from "lucide-react";
+import { toast } from "@/components/financas/toaster";
+import { confirmDialog } from "@/components/ui/confirm-dialog";
 import { PageHeader } from "@/components/financas/page-header";
 
 type Stats = {
@@ -66,7 +68,13 @@ export function AdminClient() {
   }, [q]);
 
   async function impersonate(userId: string) {
-    if (!confirm("Você vai entrar como esse usuário. Pra voltar, clica em 'Sair da impersonação' no banner do topo.")) return;
+    const ok = await confirmDialog({
+      title: "Entrar como esse usuário?",
+      description: "Pra voltar, clica em 'Voltar pro admin' no banner amarelo do topo.",
+      variant: "warning",
+      confirmLabel: "Entrar",
+    });
+    if (!ok) return;
     setImpersonating(userId);
     const res = await fetch(`/api/admin/impersonar/${userId}`, { method: "POST" });
     setImpersonating(null);
@@ -75,7 +83,7 @@ export function AdminClient() {
       router.refresh();
     } else {
       const data = await res.json().catch(() => ({}));
-      alert(data?.error || "Erro ao impersonar");
+      toast.error(data?.error || "Erro ao impersonar");
     }
   }
 

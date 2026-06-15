@@ -216,7 +216,8 @@ export function OrcamentoClient() {
                 <div className="flex items-center gap-2">
                   <input
                     type="number"
-                    step="0.01"
+                    inputMode="decimal"
+              step="0.01"
                     min="0"
                     placeholder={item.planned ? item.planned.toString() : "0,00"}
                     value={drafts[item.categoryId] ?? ""}

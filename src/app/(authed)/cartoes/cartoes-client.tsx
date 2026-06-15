@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { toast } from "@/components/financas/toaster";
+import { confirmDialog } from "@/components/ui/confirm-dialog";
 import { CreditCard, CheckCircle2, Clock, AlertTriangle, Lock, Sparkles, Trash2, Pencil, CalendarClock, ArrowRightLeft } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { PageHeader } from "@/components/financas/page-header";
@@ -122,7 +124,7 @@ export function CartoesClient() {
   async function bulkDeleteSelected() {
     const ids = Array.from(selectedTxIds);
     if (ids.length === 0) return;
-    if (!confirm(`Excluir ${ids.length} compra${ids.length === 1 ? "" : "s"} selecionada${ids.length === 1 ? "" : "s"}?`)) return;
+    const ok1 = await confirmDialog({ title: `Excluir ${ids.length} compra${ids.length === 1 ? "" : "s"} selecionada${ids.length === 1 ? "" : "s"}?`, variant: "destructive", confirmLabel: "Excluir" }); if (!ok1) return;
     const res = await fetch("/api/transactions/bulk-delete", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -139,7 +141,7 @@ export function CartoesClient() {
       inv.transactions.length > 0
         ? `Excluir a fatura de ${monthName(inv.month)}/${inv.year}?\n\nIsso vai apagar também as ${inv.transactions.length} compra${inv.transactions.length === 1 ? "" : "s"} dela.`
         : `Excluir a fatura vazia de ${monthName(inv.month)}/${inv.year}?`;
-    if (!confirm(msg)) return;
+    const ok2 = await confirmDialog({ title: msg, variant: "destructive", confirmLabel: "Excluir" }); if (!ok2) return;
     const res = await fetch(`/api/invoices/${inv.id}`, { method: "DELETE" });
     if (res.ok) load();
   }
@@ -196,12 +198,13 @@ export function CartoesClient() {
   ).length;
 
   async function cleanupProjected() {
-    if (
-      !confirm(
-        `Excluir todas as ${projectedCount} parcelas projetadas?\n\nElas voltam a existir só quando você importar a fatura do mês delas.`
-      )
-    )
-      return;
+    const ok = await confirmDialog({
+      title: `Excluir todas as ${projectedCount} parcelas projetadas?`,
+      description: "Elas voltam a existir só quando você importar a fatura do mês delas.",
+      variant: "destructive",
+      confirmLabel: "Excluir",
+    });
+    if (!ok) return;
     const res = await fetch("/api/transactions/cleanup-projected", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -211,12 +214,13 @@ export function CartoesClient() {
   }
 
   async function cleanupEmpty() {
-    if (
-      !confirm(
-        `Excluir todas as ${emptyCount} faturas vazias?\n\nSão faturas sem nenhuma compra. Você pode importá-las de novo quando quiser.`
-      )
-    )
-      return;
+    const ok = await confirmDialog({
+      title: `Excluir todas as ${emptyCount} faturas vazias?`,
+      description: "São faturas sem nenhuma compra. Você pode importá-las de novo quando quiser.",
+      variant: "destructive",
+      confirmLabel: "Excluir",
+    });
+    if (!ok) return;
     const res = await fetch("/api/invoices/cleanup-empty", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -795,9 +799,9 @@ function BulkDateModal({
     }
     const data = await res.json().catch(() => ({}));
     if (overwritePurchaseDates) {
-      alert(`Vencimento ajustado e ${data.updated || 0} lançamento(s) reescrito(s) para ${new Date(date).toLocaleDateString("pt-BR")}.`);
+      toast.success(`Vencimento e datas reescritos`, { description: `${data.updated || 0} lançamento(s) → ${new Date(date).toLocaleDateString("pt-BR")}` });
     } else {
-      alert(`Vencimento da fatura ajustado para ${new Date(date).toLocaleDateString("pt-BR")}. As datas de compra foram preservadas.`);
+      toast.success("Vencimento ajustado", { description: `Para ${new Date(date).toLocaleDateString("pt-BR")}. Datas de compra preservadas.` });
     }
     onSaved();
   }
@@ -916,7 +920,7 @@ function EditTransactionModal({
   }
 
   async function remove() {
-    if (!confirm("Excluir este lançamento?")) return;
+    const ok3 = await confirmDialog({ title: "Excluir este lançamento?", variant: "destructive", confirmLabel: "Excluir" }); if (!ok3) return;
     setDeleting(true);
     const res = await fetch(`/api/transactions/${tx.id}`, { method: "DELETE" });
     if (!res.ok) {
@@ -946,6 +950,7 @@ function EditTransactionModal({
             <label className="block text-sm font-medium mb-1">Valor</label>
             <input
               type="number"
+              inputMode="decimal"
               step="0.01"
               min="0.01"
               required
@@ -1886,7 +1891,8 @@ function ImportInvoiceModal({
                     <td className="px-2 py-1.5 text-right">
                       <input
                         type="number"
-                        step="0.01"
+                        inputMode="decimal"
+              step="0.01"
                         value={r.amount}
                         onChange={(e) =>
                           updateRow(i, { amount: parseFloat(e.target.value) || 0 })
@@ -1976,7 +1982,8 @@ function ImportInvoiceModal({
                           <button
                             type="button"
                             onClick={async () => {
-                              if (!confirm(`Excluir "${t.description}" do sistema?`)) return;
+                              const ok = await confirmDialog({ title: `Excluir "${t.description}" do sistema?`, variant: "destructive", confirmLabel: "Excluir" });
+                              if (!ok) return;
                               await fetch(`/api/transactions/${t.id}`, { method: "DELETE" });
                               onImported();
                             }}
@@ -2082,7 +2089,7 @@ function NewCardModal({
 
   async function archiveCard() {
     if (!card) return;
-    if (!confirm("Arquivar este cartão? Ele some das listas mas os lançamentos antigos continuam.")) return;
+    const ok5 = await confirmDialog({ title: "Arquivar este cartão?", description: "Ele some das listas mas os lançamentos antigos continuam.", variant: "warning", confirmLabel: "Arquivar" }); if (!ok5) return;
     const res = await fetch(`/api/accounts/${card.id}`, { method: "DELETE" });
     if (res.ok) onCreated();
   }

@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "@/components/financas/toaster";
+import { confirmDialog } from "@/components/ui/confirm-dialog";
 import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Plus, Pencil, Trash2, ArrowDownCircle, ArrowUpCircle, ArrowLeftRight, Download, X, CreditCard, Check, Clock, AlertCircle } from "lucide-react";
@@ -241,7 +243,7 @@ export function LancamentosClient() {
   }, []);
 
   async function remove(id: string) {
-    if (!confirm("Excluir este lançamento?")) return;
+    const ok1 = await confirmDialog({ title: "Excluir este lançamento?", variant: "destructive", confirmLabel: "Excluir" }); if (!ok1) return;
     await fetch(`/api/transactions/${id}`, { method: "DELETE" });
     loadTx();
   }
@@ -655,7 +657,7 @@ function InvoiceTxModal({
   }, [invoiceId]);
 
   async function remove(id: string) {
-    if (!confirm("Excluir esta compra da fatura?")) return;
+    const ok2 = await confirmDialog({ title: "Excluir esta compra da fatura?", variant: "destructive", confirmLabel: "Excluir" }); if (!ok2) return;
     await fetch(`/api/transactions/${id}`, { method: "DELETE" });
     onChanged();
     load();
@@ -1050,6 +1052,7 @@ function TransactionModal({
             <input
               required
               type="number"
+              inputMode="decimal"
               step="0.01"
               min="0.01"
               value={amount}
