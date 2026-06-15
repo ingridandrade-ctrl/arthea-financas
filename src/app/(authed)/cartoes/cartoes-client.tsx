@@ -104,6 +104,35 @@ export function CartoesClient() {
   const [selectedTxIds, setSelectedTxIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
 
+  // Filtros por fatura (chaveado por invoiceId). Permitem filtrar as compras
+  // já no sistema por dono/categoria/texto e ver somatórios.
+  type InvFilter = {
+    owner: "all" | Owner;
+    categoryId: "all" | "none" | string;
+    text: string;
+  };
+  const DEFAULT_FILTER: InvFilter = { owner: "all", categoryId: "all", text: "" };
+  const [invFilters, setInvFilters] = useState<Record<string, InvFilter>>({});
+  function getFilter(invId: string): InvFilter {
+    return invFilters[invId] || DEFAULT_FILTER;
+  }
+  function setFilter(invId: string, patch: Partial<InvFilter>) {
+    setInvFilters((prev) => ({
+      ...prev,
+      [invId]: { ...getFilter(invId), ...patch },
+    }));
+  }
+  function clearFilter(invId: string) {
+    setInvFilters((prev) => {
+      const next = { ...prev };
+      delete next[invId];
+      return next;
+    });
+  }
+  function isFilterActive(f: InvFilter): boolean {
+    return f.owner !== "all" || f.categoryId !== "all" || !!f.text;
+  }
+
   function toggleSelect(id: string) {
     setSelectedTxIds((prev) => {
       const next = new Set(prev);
@@ -458,11 +487,103 @@ export function CartoesClient() {
                       </div>
                     </div>
                     {inv.transactions.length > 0 && (() => {
-                      const invTxIds = inv.transactions.map((t) => t.id);
+                      const filter = getFilter(inv.id);
+                      const filterActive = isFilterActive(filter);
+                      const filteredTxs = inv.transactions.filter((t) => {
+                        if (filter.owner !== "all" && t.owner !== filter.owner) return false;
+                        if (filter.categoryId === "none" && t.category) return false;
+                        if (filter.categoryId !== "all" && filter.categoryId !== "none" && t.category?.id !== filter.categoryId) return false;
+                        if (filter.text) {
+                          const q = filter.text.toLowerCase();
+                          if (!t.description.toLowerCase().includes(q)) return false;
+                        }
+                        return true;
+                      });
+                      const sumFiltered = filteredTxs.reduce((s, t) => s + t.amount, 0);
+                      const sumA = filteredTxs.filter((t) => t.owner === "PARTNER_A").reduce((s, t) => s + t.amount, 0);
+                      const sumB = filteredTxs.filter((t) => t.owner === "PARTNER_B").reduce((s, t) => s + t.amount, 0);
+                      const sumCouple = filteredTxs.filter((t) => t.owner === "COUPLE").reduce((s, t) => s + t.amount, 0);
+                      const invCategories = allCategories;
+                      const invTxIds = filteredTxs.map((t) => t.id);
                       const selectedHere = invTxIds.filter((id) => selectedTxIds.has(id));
                       const allSelected = invTxIds.length > 0 && selectedHere.length === invTxIds.length;
+                      const aName = settings?.partnerAName || "Pessoa A";
+                      const bName = settings?.partnerBName || "Pessoa B";
                       return (
                       <div className="border-t border-border">
+                        <div className="bg-muted/20 border-b border-border px-4 py-3 space-y-3">
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                            <input
+                              type="search"
+                              value={filter.text}
+                              onChange={(e) => setFilter(inv.id, { text: e.target.value })}
+                              placeholder="Buscar texto..."
+                              className="px-2 py-1.5 rounded-md border border-border bg-background text-xs"
+                            />
+                            <select
+                              value={filter.categoryId}
+                              onChange={(e) => setFilter(inv.id, { categoryId: e.target.value as any })}
+                              className="px-2 py-1.5 rounded-md border border-border bg-background text-xs"
+                            >
+                              <option value="all">Todas as categorias</option>
+                              <option value="none">— sem categoria —</option>
+                              {invCategories.map((c) => (
+                                <option key={c.id} value={c.id}>{c.name}</option>
+                              ))}
+                            </select>
+                            <div className="grid grid-cols-4 gap-1">
+                              {([
+                                { v: "all" as const, label: "Todos" },
+                                { v: "COUPLE" as const, label: "Casal" },
+                                { v: "PARTNER_A" as const, label: aName },
+                                { v: "PARTNER_B" as const, label: bName },
+                              ]).map((opt) => (
+                                <button
+                                  key={opt.v}
+                                  onClick={() => setFilter(inv.id, { owner: opt.v })}
+                                  className={`px-1.5 py-1.5 rounded-md text-[11px] font-medium border truncate ${
+                                    filter.owner === opt.v
+                                      ? "bg-primary text-primary-foreground border-primary"
+                                      : "border-border hover:bg-muted"
+                                  }`}
+                                  title={opt.label}
+                                >
+                                  {opt.label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+                            <div className="bg-card border border-border rounded p-2">
+                              <p className="text-muted-foreground">
+                                {filterActive ? "Filtro" : "Total"} ({filteredTxs.length})
+                              </p>
+                              <p className="font-semibold tabular-nums text-sm">{formatCurrency(sumFiltered)}</p>
+                            </div>
+                            <div className="bg-card border border-border rounded p-2">
+                              <p className="text-muted-foreground">Casal</p>
+                              <p className="font-semibold tabular-nums text-sm">{formatCurrency(sumCouple)}</p>
+                            </div>
+                            <div className="bg-card border border-border rounded p-2">
+                              <p className="text-muted-foreground truncate">{aName}</p>
+                              <p className="font-semibold tabular-nums text-sm">{formatCurrency(sumA)}</p>
+                            </div>
+                            <div className="bg-card border border-border rounded p-2">
+                              <p className="text-muted-foreground truncate">{bName}</p>
+                              <p className="font-semibold tabular-nums text-sm">{formatCurrency(sumB)}</p>
+                            </div>
+                          </div>
+                          {filterActive && (
+                            <div className="flex justify-end">
+                              <button
+                                onClick={() => clearFilter(inv.id)}
+                                className="text-[11px] text-muted-foreground hover:text-foreground underline"
+                              >
+                                Limpar filtros
+                              </button>
+                            </div>
+                          )}
+                        </div>
                         {selectedHere.length > 0 && (
                           <div className="bg-destructive/5 border-b border-border px-4 py-2 flex items-center justify-between text-xs">
                             <span>
@@ -497,7 +618,14 @@ export function CartoesClient() {
                             </tr>
                           </thead>
                           <tbody>
-                            {inv.transactions.map((t) => (
+                            {filteredTxs.length === 0 && (
+                              <tr>
+                                <td colSpan={7} className="px-4 py-6 text-center text-sm text-muted-foreground italic">
+                                  Nenhuma compra com esses filtros.
+                                </td>
+                              </tr>
+                            )}
+                            {filteredTxs.map((t) => (
                               <tr
                                 key={t.id}
                                 className={`border-t border-border hover:bg-muted/30 cursor-pointer ${
