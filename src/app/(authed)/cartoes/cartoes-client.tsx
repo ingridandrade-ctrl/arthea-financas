@@ -1266,6 +1266,10 @@ function ImportInvoiceModal({
   );
   const [filterFrom, setFilterFrom] = useState("");
   const [filterTo, setFilterTo] = useState("");
+  const [filterOwner, setFilterOwner] = useState<"all" | Owner>("all");
+  const [filterStatus, setFilterStatus] = useState<"all" | "included" | "excluded">("all");
+  const [filterCategoryId, setFilterCategoryId] = useState<"all" | "none" | string>("all");
+  const [filterText, setFilterText] = useState("");
   const [bulkDate, setBulkDate] = useState("");
   const [invoiceDueDate, setInvoiceDueDate] = useState("");
 
@@ -1416,9 +1420,32 @@ function ImportInvoiceModal({
     .filter(({ row }) => {
       if (filterFrom && row.date < filterFrom) return false;
       if (filterTo && row.date > filterTo) return false;
+      if (filterOwner !== "all" && row.owner !== filterOwner) return false;
+      if (filterStatus === "included" && row.excluded) return false;
+      if (filterStatus === "excluded" && !row.excluded) return false;
+      if (filterCategoryId === "none" && row.categoryId) return false;
+      if (filterCategoryId !== "all" && filterCategoryId !== "none" && row.categoryId !== filterCategoryId) return false;
+      if (filterText) {
+        const q = filterText.toLowerCase();
+        if (!row.description.toLowerCase().includes(q)) return false;
+      }
       return true;
     });
   const visibleRows = visibleRowsWithIdx.map((x) => x.row);
+
+  // Somatórios por dono baseados no filtro atual (só incluídas)
+  const visibleIncluded = visibleRows.filter((r) => !r.excluded);
+  const sumA = visibleIncluded.filter((r) => r.owner === "PARTNER_A").reduce((s, r) => s + r.amount, 0);
+  const sumB = visibleIncluded.filter((r) => r.owner === "PARTNER_B").reduce((s, r) => s + r.amount, 0);
+  const sumCouple = visibleIncluded.filter((r) => r.owner === "COUPLE").reduce((s, r) => s + r.amount, 0);
+  const sumVisible = visibleIncluded.reduce((s, r) => s + r.amount, 0);
+  const anyFilterActive =
+    !!filterFrom ||
+    !!filterTo ||
+    filterOwner !== "all" ||
+    filterStatus !== "all" ||
+    filterCategoryId !== "all" ||
+    !!filterText;
 
   function bulkSetExcluded(excluded: boolean) {
     const visibleIdx = new Set(visibleRowsWithIdx.map((x) => x.i));
@@ -1771,21 +1798,134 @@ function ImportInvoiceModal({
                 className="w-full px-2 py-1.5 rounded-lg border border-border bg-background text-sm"
               />
             </div>
+            <div>
+              <label className="block text-xs font-medium mb-1">Buscar texto</label>
+              <input
+                type="text"
+                value={filterText}
+                onChange={(e) => setFilterText(e.target.value)}
+                placeholder="ex: ifood, uber..."
+                className="w-full px-2 py-1.5 rounded-lg border border-border bg-background text-sm"
+              />
+            </div>
+            <div className="md:col-span-3">
+              <label className="block text-xs font-medium mb-1">Filtrar por dono</label>
+              <div className="grid grid-cols-4 gap-1.5">
+                {([
+                  { v: "all" as const, label: "Todos" },
+                  { v: "COUPLE" as const, label: "Casal" },
+                  { v: "PARTNER_A" as const, label: partnerA },
+                  { v: "PARTNER_B" as const, label: partnerB },
+                ]).map((opt) => (
+                  <button
+                    key={opt.v}
+                    type="button"
+                    onClick={() => setFilterOwner(opt.v)}
+                    className={`px-2 py-1.5 rounded-md text-xs font-medium border ${
+                      filterOwner === opt.v
+                        ? "bg-primary text-primary-foreground border-primary"
+                        : "border-border hover:bg-muted"
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-medium mb-1">Status</label>
+              <div className="grid grid-cols-3 gap-1.5">
+                {([
+                  { v: "all" as const, label: "Tudo" },
+                  { v: "included" as const, label: "Incluídas" },
+                  { v: "excluded" as const, label: "Excluídas" },
+                ]).map((opt) => (
+                  <button
+                    key={opt.v}
+                    type="button"
+                    onClick={() => setFilterStatus(opt.v)}
+                    className={`px-2 py-1.5 rounded-md text-xs font-medium border ${
+                      filterStatus === opt.v
+                        ? "bg-primary text-primary-foreground border-primary"
+                        : "border-border hover:bg-muted"
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="md:col-span-2">
+              <label className="block text-xs font-medium mb-1">Categoria</label>
+              <select
+                value={filterCategoryId}
+                onChange={(e) => setFilterCategoryId(e.target.value as any)}
+                className="w-full px-2 py-1.5 rounded-lg border border-border bg-background text-sm"
+              >
+                <option value="all">Todas as categorias</option>
+                <option value="none">— sem categoria —</option>
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </div>
+            {anyFilterActive && (
+              <div className="md:col-span-3 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFilterFrom("");
+                    setFilterTo("");
+                    setFilterOwner("all");
+                    setFilterStatus("all");
+                    setFilterCategoryId("all");
+                    setFilterText("");
+                  }}
+                  className="text-xs text-muted-foreground hover:text-foreground underline"
+                >
+                  Limpar todos os filtros
+                </button>
+              </div>
+            )}
           </div>
+
+          {anyFilterActive && (
+            <div className="bg-primary/5 border border-primary/20 rounded-lg p-3 grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+              <div>
+                <p className="text-muted-foreground">Filtro visível</p>
+                <p className="font-semibold tabular-nums text-base">
+                  {formatCurrency(sumVisible)}
+                </p>
+                <p className="text-[10px] text-muted-foreground">{visibleIncluded.length} compra{visibleIncluded.length === 1 ? "" : "s"}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Do casal</p>
+                <p className="font-semibold tabular-nums text-base">{formatCurrency(sumCouple)}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">{partnerA}</p>
+                <p className="font-semibold tabular-nums text-base">{formatCurrency(sumA)}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">{partnerB}</p>
+                <p className="font-semibold tabular-nums text-base">{formatCurrency(sumB)}</p>
+              </div>
+            </div>
+          )}
 
           <div className="flex items-center justify-between flex-wrap gap-2">
             <p className="text-sm">
               <strong>{includedCount}</strong> de <strong>{rows.length}</strong> compras
               selecionadas — total{" "}
               <strong className="tabular-nums">{formatCurrency(total)}</strong>
-              {(filterFrom || filterTo) && (
+              {anyFilterActive && (
                 <span className="text-xs text-muted-foreground ml-2">
                   ({visibleRows.length} visíveis com o filtro)
                 </span>
               )}
             </p>
             <div className="flex items-center gap-2">
-              {(filterFrom || filterTo) && (
+              {anyFilterActive && (
                 <>
                   <button
                     type="button"
