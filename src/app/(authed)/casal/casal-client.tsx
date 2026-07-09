@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { toast } from "@/components/financas/toaster";
 import { confirmDialog } from "@/components/ui/confirm-dialog";
-import { Plus, Trash2, ArrowRight, Users, Scale, HandCoins, TrendingDown, BarChart3, Receipt } from "lucide-react";
+import { Plus, Trash2, ArrowRight, Users, Scale, HandCoins, TrendingDown, BarChart3, Receipt, Copy, CheckCircle2 } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { PageHeader } from "@/components/financas/page-header";
 import { formatCurrency } from "@/lib/utils";
@@ -120,8 +121,22 @@ export function CasalClient() {
 
   async function remove(id: string) {
     const ok = await confirmDialog({ title: "Excluir este acerto?", variant: "destructive", confirmLabel: "Excluir" }); if (!ok) return;
-    await fetch(`/api/settlements/${id}`, { method: "DELETE" });
+    const res = await fetch(`/api/settlements/${id}`, { method: "DELETE" });
+    if (res.ok) {
+      toast.success("Acerto excluído");
+    } else {
+      toast.error("Erro ao excluir");
+    }
     load();
+  }
+
+  async function copyAmount(amount: number) {
+    try {
+      await navigator.clipboard.writeText(amount.toFixed(2).replace(".", ","));
+      toast.success(`R$ ${amount.toFixed(2).replace(".", ",")} copiado`);
+    } catch {
+      toast.error("Não consegui copiar — copia na mão.");
+    }
   }
 
   const ownerName = (o: "PARTNER_A" | "PARTNER_B") =>
@@ -172,6 +187,100 @@ export function CasalClient() {
         <p className="text-sm text-muted-foreground">Carregando...</p>
       ) : (
         <>
+          {/* === SALDO HERO (no topo, ação primária) === */}
+          {balance && (() => {
+            const net = balance.netBalance;
+            const isSettled = Math.abs(net) < 0.01;
+            const debtor = net < 0 ? "PARTNER_A" : "PARTNER_B";
+            const creditor = net < 0 ? "PARTNER_B" : "PARTNER_A";
+            const owed = Math.abs(net);
+            return (
+              <div
+                className="rounded-2xl border-2 border-primary/20 p-6 mb-6 shadow-sm"
+                style={{
+                  background:
+                    "linear-gradient(135deg, color-mix(in srgb, var(--color-brand) 10%, var(--color-card)) 0%, var(--color-card) 70%)",
+                }}
+              >
+                {isSettled ? (
+                  <div className="text-center py-2">
+                    <CheckCircle2 className="w-10 h-10 text-success mx-auto mb-2" />
+                    <p className="text-xl font-display tracking-tight">Tudo certo!</p>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Ninguém deve nada{period ? " neste mês" : ""}.
+                    </p>
+                  </div>
+                ) : (
+                  <div>
+                    <p className="text-xs text-muted-foreground uppercase tracking-wide mb-2">
+                      Saldo {period ? "do mês" : "total"}
+                    </p>
+                    <div className="flex items-center gap-3 flex-wrap mb-3">
+                      <span className="text-lg font-medium">{ownerName(debtor)}</span>
+                      <ArrowRight className="w-5 h-5 text-muted-foreground" />
+                      <span className="text-lg font-medium">{ownerName(creditor)}</span>
+                    </div>
+                    <p className="text-4xl font-bold text-primary tabular-nums mb-4 font-display">
+                      {formatCurrency(owed)}
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        onClick={() => setCreating(true)}
+                        className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground hover:opacity-90 font-medium text-sm"
+                      >
+                        <CheckCircle2 className="w-4 h-4" />
+                        Já paguei — registrar acerto
+                      </button>
+                      <button
+                        onClick={() => copyAmount(owed)}
+                        className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-border hover:bg-muted text-sm"
+                      >
+                        <Copy className="w-4 h-4" />
+                        Copiar valor
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* === Composição compacta — só linhas com valor > 0 === */}
+          {balance && (() => {
+            const a = ownerName("PARTNER_A");
+            const b = ownerName("PARTNER_B");
+            const rows = [
+              { label: `${a} pagou pelo casal`, value: balance.details.aPaidForCouple },
+              { label: `${b} pagou pelo casal`, value: balance.details.bPaidForCouple },
+              { label: `${a} pagou por ${b}`, value: balance.details.aPaidForB },
+              { label: `${b} pagou por ${a}`, value: balance.details.bPaidForA },
+              { label: `Acertos ${a} → ${b}`, value: balance.details.settlementsAtoB, divider: true },
+              { label: `Acertos ${b} → ${a}`, value: balance.details.settlementsBtoA },
+            ].filter((r) => r.value > 0.005);
+            if (rows.length === 0) return null;
+            return (
+              <details className="bg-card border border-border rounded-xl mb-6 group">
+                <summary className="px-5 py-3 cursor-pointer flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground select-none">
+                  <HandCoins className="w-4 h-4" />
+                  Como chegamos nesse saldo
+                  <span className="ml-auto text-xs group-open:hidden">expandir</span>
+                  <span className="ml-auto text-xs hidden group-open:inline">recolher</span>
+                </summary>
+                <ul className="space-y-2 text-sm p-5 pt-0">
+                  {rows.map((r, i) => (
+                    <li
+                      key={i}
+                      className={`flex justify-between ${r.divider ? "border-t border-border pt-2 mt-2" : ""}`}
+                    >
+                      <span className="text-muted-foreground">{r.label}</span>
+                      <span className="tabular-nums">{formatCurrency(r.value)}</span>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            );
+          })()}
+
           {dash && (
             <>
               <div className="flex items-center gap-2 mb-3">
@@ -241,113 +350,8 @@ export function CasalClient() {
                 )}
               </div>
 
-              <div className="flex items-center gap-2 mb-3 mt-8">
-                <Scale className="w-4 h-4 text-muted-foreground" />
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                  Acertos entre vocês
-                </h2>
-              </div>
             </>
           )}
-
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
-            <div className="lg:col-span-2 bg-card border border-border rounded-xl p-6">
-              <div className="flex items-center gap-2 mb-4">
-                <Scale className="w-5 h-5 text-muted-foreground" />
-                <h2 className="text-lg font-semibold">Saldo atual</h2>
-              </div>
-              {balance && (
-                <div className="grid grid-cols-2 gap-3 mb-4">
-                  {(() => {
-                    const net = balance.netBalance;
-                    const aOwesB = net < 0 ? Math.abs(net) : 0;
-                    const bOwesA = net > 0 ? net : 0;
-                    return (
-                      <>
-                        <div className="rounded-lg border border-border p-4">
-                          <p className="text-xs text-muted-foreground mb-1">
-                            {ownerName("PARTNER_A")} deve mandar para {ownerName("PARTNER_B")}
-                          </p>
-                          <p className="text-2xl font-bold tabular-nums">
-                            {formatCurrency(aOwesB)}
-                          </p>
-                        </div>
-                        <div className="rounded-lg border border-border p-4">
-                          <p className="text-xs text-muted-foreground mb-1">
-                            {ownerName("PARTNER_B")} deve mandar para {ownerName("PARTNER_A")}
-                          </p>
-                          <p className="text-2xl font-bold tabular-nums">
-                            {formatCurrency(bOwesA)}
-                          </p>
-                        </div>
-                      </>
-                    );
-                  })()}
-                </div>
-              )}
-              {!balance || balance.amount < 0.01 ? (
-                <div className="text-center py-4 border-t border-border">
-                  <p className="text-lg font-semibold text-success">Tudo certo!</p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    No líquido, ninguém deve nada.
-                  </p>
-                </div>
-              ) : (
-                <div className="text-center pt-4 border-t border-border">
-                  <p className="text-xs text-muted-foreground mb-1">Líquido (deduzindo)</p>
-                  <div className="flex items-center justify-center gap-3 mb-1">
-                    <span className="text-sm">{ownerName(balance.whoOwes!)}</span>
-                    <ArrowRight className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-sm">
-                      {ownerName(balance.whoOwes === "PARTNER_A" ? "PARTNER_B" : "PARTNER_A")}
-                    </span>
-                  </div>
-                  <p className="text-2xl font-bold text-primary tabular-nums">
-                    {formatCurrency(balance.amount)}
-                  </p>
-                </div>
-              )}
-            </div>
-
-            <div className="bg-card border border-border rounded-xl p-5">
-              <div className="flex items-center gap-2 mb-3">
-                <HandCoins className="w-4 h-4 text-muted-foreground" />
-                <h2 className="text-sm font-semibold">Composição</h2>
-              </div>
-              {balance ? (
-                <ul className="space-y-2 text-sm">
-                  <li className="flex justify-between">
-                    <span className="text-muted-foreground">{ownerName("PARTNER_A")} pagou pelo casal</span>
-                    <span className="tabular-nums">{formatCurrency(balance.details.aPaidForCouple)}</span>
-                  </li>
-                  <li className="flex justify-between">
-                    <span className="text-muted-foreground">{ownerName("PARTNER_B")} pagou pelo casal</span>
-                    <span className="tabular-nums">{formatCurrency(balance.details.bPaidForCouple)}</span>
-                  </li>
-                  <li className="flex justify-between">
-                    <span className="text-muted-foreground">
-                      {ownerName("PARTNER_A")} pagou por {ownerName("PARTNER_B")}
-                    </span>
-                    <span className="tabular-nums">{formatCurrency(balance.details.aPaidForB)}</span>
-                  </li>
-                  <li className="flex justify-between">
-                    <span className="text-muted-foreground">
-                      {ownerName("PARTNER_B")} pagou por {ownerName("PARTNER_A")}
-                    </span>
-                    <span className="tabular-nums">{formatCurrency(balance.details.bPaidForA)}</span>
-                  </li>
-                  <li className="flex justify-between border-t border-border pt-2">
-                    <span className="text-muted-foreground">Acertos {ownerName("PARTNER_A")} → {ownerName("PARTNER_B")}</span>
-                    <span className="tabular-nums">{formatCurrency(balance.details.settlementsAtoB)}</span>
-                  </li>
-                  <li className="flex justify-between">
-                    <span className="text-muted-foreground">Acertos {ownerName("PARTNER_B")} → {ownerName("PARTNER_A")}</span>
-                    <span className="tabular-nums">{formatCurrency(balance.details.settlementsBtoA)}</span>
-                  </li>
-                </ul>
-              ) : null}
-            </div>
-          </div>
 
           <div className="bg-card border-2 border-primary/20 rounded-xl overflow-hidden mb-4 shadow-sm">
             <div className="p-4 border-b border-border flex items-center gap-2 bg-primary/5">
@@ -363,39 +367,76 @@ export function CasalClient() {
                 Nenhum acerto registrado {period ? "neste mês" : "ainda"}.
               </p>
             ) : (
-              <table className="w-full text-sm">
-                <thead className="bg-muted/30 text-left text-muted-foreground">
-                  <tr>
-                    <th className="px-4 py-2 font-medium">Data</th>
-                    <th className="px-4 py-2 font-medium">De</th>
-                    <th className="px-4 py-2 font-medium">Para</th>
-                    <th className="px-4 py-2 font-medium text-right">Valor</th>
-                    <th className="px-4 py-2 font-medium">Observação</th>
-                    <th className="w-12"></th>
-                  </tr>
-                </thead>
-                <tbody>
+              <>
+                {/* Desktop: tabela */}
+                <table className="w-full text-sm hidden md:table">
+                  <thead className="bg-muted/30 text-left text-muted-foreground">
+                    <tr>
+                      <th className="px-4 py-2 font-medium">Data</th>
+                      <th className="px-4 py-2 font-medium">De</th>
+                      <th className="px-4 py-2 font-medium">Para</th>
+                      <th className="px-4 py-2 font-medium text-right">Valor</th>
+                      <th className="px-4 py-2 font-medium">Observação</th>
+                      <th className="w-12"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {settlements.map((s) => (
+                      <tr key={s.id} className="border-t border-border hover:bg-muted/30">
+                        <td className="px-4 py-2">{new Date(s.date).toLocaleDateString("pt-BR")}</td>
+                        <td className="px-4 py-2">{ownerName(s.fromOwner)}</td>
+                        <td className="px-4 py-2">{ownerName(s.toOwner)}</td>
+                        <td className="px-4 py-2 text-right tabular-nums font-medium">
+                          {formatCurrency(s.amount)}
+                        </td>
+                        <td className="px-4 py-2 text-muted-foreground">{s.notes || "—"}</td>
+                        <td className="px-4 py-2 text-right">
+                          <button
+                            onClick={() => remove(s.id)}
+                            className="p-1.5 rounded-md hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
+                            aria-label="Excluir acerto"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+
+                {/* Mobile: cards */}
+                <div className="md:hidden divide-y divide-border">
                   {settlements.map((s) => (
-                    <tr key={s.id} className="border-t border-border hover:bg-muted/30">
-                      <td className="px-4 py-2">{new Date(s.date).toLocaleDateString("pt-BR")}</td>
-                      <td className="px-4 py-2">{ownerName(s.fromOwner)}</td>
-                      <td className="px-4 py-2">{ownerName(s.toOwner)}</td>
-                      <td className="px-4 py-2 text-right tabular-nums font-medium">
-                        {formatCurrency(s.amount)}
-                      </td>
-                      <td className="px-4 py-2 text-muted-foreground">{s.notes || "—"}</td>
-                      <td className="px-4 py-2 text-right">
+                    <div key={s.id} className="p-4">
+                      <div className="flex items-baseline justify-between mb-1">
+                        <span className="text-base font-semibold tabular-nums">
+                          {formatCurrency(s.amount)}
+                        </span>
                         <button
                           onClick={() => remove(s.id)}
                           className="p-1.5 rounded-md hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
+                          aria-label="Excluir acerto"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
-                      </td>
-                    </tr>
+                      </div>
+                      <div className="flex items-center gap-1.5 text-sm">
+                        <span>{ownerName(s.fromOwner)}</span>
+                        <ArrowRight className="w-3.5 h-3.5 text-muted-foreground" />
+                        <span>{ownerName(s.toOwner)}</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {new Date(s.date).toLocaleDateString("pt-BR")}
+                      </p>
+                      {s.notes && (
+                        <p className="text-xs text-muted-foreground mt-1 italic">
+                          {s.notes}
+                        </p>
+                      )}
+                    </div>
                   ))}
-                </tbody>
-              </table>
+                </div>
+              </>
             )}
           </div>
 
@@ -432,6 +473,7 @@ export function CasalClient() {
           onClose={() => setCreating(false)}
           onSaved={() => {
             setCreating(false);
+            toast.success("Acerto registrado", { description: "O saldo do casal foi atualizado." });
             load();
           }}
         />
@@ -463,42 +505,67 @@ function ContributionList({
         <p className="text-xs text-muted-foreground italic">Nenhuma despesa nessa direção.</p>
       ) : (
         <ul className="space-y-2 max-h-72 overflow-y-auto pr-1">
-          {items.map((c) => (
-            <li key={c.id} className="text-xs border border-border rounded-md p-2">
-              <div className="flex items-baseline justify-between gap-2">
-                <span className="font-medium truncate">{c.description}</span>
-                <span className="tabular-nums whitespace-nowrap">
-                  {formatCurrency(c.contributionAmount)}
-                </span>
-              </div>
-              <div className="flex items-center gap-2 text-muted-foreground mt-1">
-                <span>{new Date(c.date).toLocaleDateString("pt-BR")}</span>
-                {c.category && (
-                  <span className="inline-flex items-center gap-1">
-                    <span
-                      className="w-1.5 h-1.5 rounded-full"
-                      style={{ backgroundColor: c.category.color }}
-                    />
-                    {c.category.name}
+          {items.map((c) => {
+            // Drill-down: faturas agregadas linkam pra Cartões filtrando a fatura
+            const isInvoice = c.kind === "invoice";
+            const invoiceId = isInvoice ? c.id.replace(/^invoice-/, "") : null;
+            const inner = (
+              <>
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="font-medium truncate flex items-center gap-1">
+                    {c.description}
+                    {isInvoice && (
+                      <ArrowRight className="w-3 h-3 text-muted-foreground" aria-hidden />
+                    )}
                   </span>
-                )}
-                {c.kind === "couple" && c.totalAmount !== c.contributionAmount && (
-                  <span className="text-[10px] italic">
-                    (parte do casal de {formatCurrency(c.totalAmount)})
+                  <span className="tabular-nums whitespace-nowrap">
+                    {formatCurrency(c.contributionAmount)}
                   </span>
-                )}
-                {c.kind === "direct" && (
-                  <span className="text-[10px] italic">(pagou pelo outro)</span>
-                )}
-                {c.kind === "invoice" && (
-                  <span className="text-[10px] italic">
-                    (fatura agrupada · {c.itemCount} compra{c.itemCount === 1 ? "" : "s"} · total{" "}
-                    {formatCurrency(c.totalAmount)})
-                  </span>
-                )}
-              </div>
-            </li>
-          ))}
+                </div>
+                <div className="flex items-center gap-2 text-muted-foreground mt-1">
+                  <span>{new Date(c.date).toLocaleDateString("pt-BR")}</span>
+                  {c.category && (
+                    <span className="inline-flex items-center gap-1">
+                      <span
+                        className="w-1.5 h-1.5 rounded-full"
+                        style={{ backgroundColor: c.category.color }}
+                      />
+                      {c.category.name}
+                    </span>
+                  )}
+                  {c.kind === "couple" && c.totalAmount !== c.contributionAmount && (
+                    <span className="text-[10px] italic">
+                      (parte do casal de {formatCurrency(c.totalAmount)})
+                    </span>
+                  )}
+                  {c.kind === "direct" && (
+                    <span className="text-[10px] italic">(pagou pelo outro)</span>
+                  )}
+                  {c.kind === "invoice" && (
+                    <span className="text-[10px] italic">
+                      (fatura · {c.itemCount} compra{c.itemCount === 1 ? "" : "s"} · total{" "}
+                      {formatCurrency(c.totalAmount)})
+                    </span>
+                  )}
+                </div>
+              </>
+            );
+            return isInvoice && invoiceId ? (
+              <li key={c.id}>
+                <Link
+                  href={`/cartoes?invoice=${invoiceId}`}
+                  className="block text-xs border border-border rounded-md p-2 hover:bg-muted/50 hover:border-primary/30 transition-colors"
+                  title="Ver compras desta fatura"
+                >
+                  {inner}
+                </Link>
+              </li>
+            ) : (
+              <li key={c.id} className="text-xs border border-border rounded-md p-2">
+                {inner}
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>

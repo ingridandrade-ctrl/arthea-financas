@@ -171,6 +171,11 @@ export async function POST(req: Request) {
         }
       }
       return { createdIds };
+    }, {
+      // Fatura pode ter 100+ linhas. Neon default é 5s — muito curto.
+      // 60s cobre com folga; maxWait=15s pra pegar conexão do pool.
+      timeout: 60_000,
+      maxWait: 15_000,
     });
 
     return NextResponse.json({ created: result.createdIds.length });
