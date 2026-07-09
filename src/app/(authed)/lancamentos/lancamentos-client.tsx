@@ -150,7 +150,9 @@ export function LancamentosClient() {
     if (type) params.set("type", type);
     else params.delete("type");
     const qs = params.toString();
-    router.replace(qs ? `/financas/lancamentos?${qs}` : "/lancamentos");
+    // A rota é /lancamentos (o subdomínio financas.arthea.com.br já cobre
+    // o "financas"). Prefixar com /financas gera 404.
+    router.replace(qs ? `/lancamentos?${qs}` : "/lancamentos");
   }, [type]);
 
   function applyPreset(p: PeriodPreset) {
