@@ -1519,24 +1519,37 @@ function ImportInvoiceModal({
       invoiceYear = parseInt(m[1], 10);
       invoiceMonthNum = parseInt(m[2], 10) - 1;
     }
-    const res = await fetch("/api/import/commit", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        accountId,
-        rows: toSend,
-        invoiceYear,
-        invoiceMonth: invoiceMonthNum,
-        invoiceDueDate: invoiceDueDate || null,
-      }),
-    });
-    const data = await res.json().catch(() => ({}));
-    setBusy(false);
-    if (!res.ok) {
-      setError(data?.error || "Erro ao salvar");
-      return;
+    try {
+      const res = await fetch("/api/import/commit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          accountId,
+          rows: toSend,
+          invoiceYear,
+          invoiceMonth: invoiceMonthNum,
+          invoiceDueDate: invoiceDueDate || null,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      setBusy(false);
+      if (!res.ok) {
+        setError(data?.error || "Erro ao salvar");
+        return;
+      }
+      onImported();
+    } catch (err: any) {
+      // Sem esse catch qualquer falha de rede (Neon dormindo, timeout do
+      // serverless, offline) rejeita a promise, busy fica travado em true
+      // e a usuária vê "nada acontecendo" ao clicar Confirmar.
+      console.error("[import/commit] failed", err);
+      setBusy(false);
+      setError(
+        err?.name === "AbortError"
+          ? "Servidor demorou pra responder. Tenta de novo."
+          : "Falha de conexão. Verifica sua internet e tenta de novo."
+      );
     }
-    onImported();
   }
 
   function updateRow(i: number, patch: Partial<ParsedRow>) {

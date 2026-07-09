@@ -990,34 +990,47 @@ function TransactionModal({
     const url = transaction
       ? `/api/transactions/${transaction.id}`
       : "/api/transactions";
-    const res = await fetch(url, {
-      method: transaction ? "PATCH" : "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        type,
-        amount: numericAmount,
-        date,
-        description,
-        notes: notes || null,
-        owner,
-        paidByOwner: type === "EXPENSE" ? (paidByOwner || null) : null,
-        splitRatio:
-          type === "EXPENSE" && owner === "COUPLE"
-            ? Math.min(Math.max(splitPercentA, 0), 100) / 100
-            : null,
-        accountId,
-        toAccountId: type === "TRANSFER" ? toAccountId : null,
-        categoryId: type === "TRANSFER" ? null : categoryId || null,
-        paid: type === "EXPENSE" ? paid : true,
-      }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      setError(data?.error || "Erro ao salvar");
+    try {
+      const res = await fetch(url, {
+        method: transaction ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type,
+          amount: numericAmount,
+          date,
+          description,
+          notes: notes || null,
+          owner,
+          paidByOwner: type === "EXPENSE" ? (paidByOwner || null) : null,
+          splitRatio:
+            type === "EXPENSE" && owner === "COUPLE"
+              ? Math.min(Math.max(splitPercentA, 0), 100) / 100
+              : null,
+          accountId,
+          toAccountId: type === "TRANSFER" ? toAccountId : null,
+          categoryId: type === "TRANSFER" ? null : categoryId || null,
+          paid: type === "EXPENSE" ? paid : true,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data?.error || "Erro ao salvar");
+        setSaving(false);
+        return;
+      }
+      onSaved();
+    } catch (err: any) {
+      // Se cair aqui é falha de rede / DB dormindo / timeout do serverless.
+      // Sem esse catch a promise rejeita silenciosa, saving fica travado
+      // em true e o usuário vê "nada acontecendo" ao clicar Salvar.
+      console.error("[transactions] submit failed", err);
+      setError(
+        err?.name === "AbortError"
+          ? "Servidor demorou pra responder. Tenta de novo."
+          : "Falha de conexão. Verifica sua internet e tenta de novo."
+      );
       setSaving(false);
-      return;
     }
-    onSaved();
   }
 
   return (
