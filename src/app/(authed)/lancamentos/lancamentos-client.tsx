@@ -30,7 +30,14 @@ function presetRange(p: PeriodPreset): { from: string; to: string } {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   };
   if (p === "this_month") {
-    return { from: monthFirst(now.getFullYear(), now.getMonth()), to: today };
+    // Inclui o mês inteiro (não só até hoje) pra que contas pendentes
+    // com vencimento futuro dentro deste mês apareçam no filtro padrão.
+    // Antes: to=today deixava a usuária confusa achando que a conta
+    // "não subiu" quando na verdade estava filtrada fora da tela.
+    return {
+      from: monthFirst(now.getFullYear(), now.getMonth()),
+      to: monthLast(now.getFullYear(), now.getMonth()),
+    };
   }
   if (p === "last_month") {
     const d = new Date(now.getFullYear(), now.getMonth() - 1, 1);
@@ -163,6 +170,23 @@ export function LancamentosClient() {
     setType("");
     setStatus("");
     setQ("");
+  }
+
+  // Se a movimentação recém salva cair fora do filtro atual de datas,
+  // expande o range pra incluí-la — evita o clássico "salvei mas não
+  // aparece na lista" quando o vencimento é depois do fim do período.
+  function expandFilterIfOutside(createdDate?: string) {
+    if (!createdDate || !/^\d{4}-\d{2}-\d{2}$/.test(createdDate)) return;
+    let changed = false;
+    if (from && createdDate < from) {
+      setFrom(createdDate);
+      changed = true;
+    }
+    if (to && createdDate > to) {
+      setTo(createdDate);
+      changed = true;
+    }
+    if (changed) setPeriod("custom");
   }
 
   const activeFilterCount =
@@ -590,8 +614,10 @@ export function LancamentosClient() {
           categories={categories}
           settings={settings}
           onClose={() => setCreating(false)}
-          onSaved={() => {
+          onSaved={(createdDate) => {
             setCreating(false);
+            expandFilterIfOutside(createdDate);
+            toast.success("Movimentação salva");
             loadTx();
           }}
         />
@@ -603,8 +629,10 @@ export function LancamentosClient() {
           categories={categories}
           settings={settings}
           onClose={() => setEditing(null)}
-          onSaved={() => {
+          onSaved={(createdDate) => {
             setEditing(null);
+            expandFilterIfOutside(createdDate);
+            toast.success("Movimentação atualizada");
             loadTx();
           }}
         />
@@ -923,7 +951,7 @@ function TransactionModal({
   categories: Category[];
   settings: Settings | null;
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: (createdDate?: string) => void;
 }) {
   const [type, setType] = useState<"INCOME" | "EXPENSE" | "TRANSFER">(
     transaction?.type || "EXPENSE"
@@ -1018,7 +1046,9 @@ function TransactionModal({
         setSaving(false);
         return;
       }
-      onSaved();
+      // Passa a data pro parent poder expandir o filtro se necessário
+      // (ex: conta pendente pra mês que vem cai fora do filtro atual).
+      onSaved(date);
     } catch (err: any) {
       // Se cair aqui é falha de rede / DB dormindo / timeout do serverless.
       // Sem esse catch a promise rejeita silenciosa, saving fica travado
