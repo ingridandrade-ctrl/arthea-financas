@@ -13,6 +13,8 @@ export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
 
     const monthParam = searchParams.get("month");
+    const fromParam = searchParams.get("from");
+    const toParam = searchParams.get("to");
     const cardGrouping = searchParams.get("cardGrouping") === "purchase_date"
       ? "purchase_date"
       : "fatura_month";
@@ -34,9 +36,32 @@ export async function GET(req: Request) {
       month = now.getUTCMonth();
     }
 
-    const start = new Date(Date.UTC(year, month, 1, 0, 0, 0, 0));
-    const end = new Date(Date.UTC(year, month + 1, 1, 0, 0, 0, 0));
-    const prevStart = new Date(Date.UTC(year, month - 1, 1, 0, 0, 0, 0));
+    // from/to (YYYY-MM-DD) tem precedência sobre month quando presentes.
+    // Suporta filtro de período customizado (ex: aba Casal com "Últimos 3
+    // meses" ou range personalizado). Quando ausentes, mantém o comportamento
+    // mês-a-mês legado (usado por outros consumidores como Dashboard).
+    const dateRangeRE = /^\d{4}-\d{2}-\d{2}$/;
+    const useCustomRange =
+      !!fromParam && !!toParam && dateRangeRE.test(fromParam) && dateRangeRE.test(toParam);
+    let start: Date;
+    let end: Date;
+    if (useCustomRange) {
+      const [fy, fm, fd] = fromParam!.split("-").map(Number);
+      const [ty, tm, td] = toParam!.split("-").map(Number);
+      start = new Date(Date.UTC(fy, fm - 1, fd, 0, 0, 0, 0));
+      // end é exclusivo — soma 1 dia pra incluir o dia final inteiro
+      end = new Date(Date.UTC(ty, tm - 1, td + 1, 0, 0, 0, 0));
+      // Pivot do monthlySeries no fim do range escolhido — senão um range
+      // de 2025 mostraria 6 meses de 2026 (zerados) no gráfico de tendência.
+      year = ty;
+      month = tm - 1;
+    } else {
+      start = new Date(Date.UTC(year, month, 1, 0, 0, 0, 0));
+      end = new Date(Date.UTC(year, month + 1, 1, 0, 0, 0, 0));
+    }
+    // previous = range de mesmo tamanho imediatamente antes de start
+    const rangeMs = end.getTime() - start.getTime();
+    const prevStart = new Date(start.getTime() - rangeMs);
     const sixMonthsAgo = new Date(Date.UTC(year, month - 5, 1, 0, 0, 0, 0));
     const sevenDaysAgo = new Date(
       Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 6, 0, 0, 0, 0)

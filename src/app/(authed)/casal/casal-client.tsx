@@ -70,35 +70,73 @@ export function CasalClient() {
   const [dash, setDash] = useState<DashboardLite | null>(null);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
-  const today = new Date();
-  const [period, setPeriod] = useState<string>(
-    `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`
-  );
 
-  function periodRange(): { from: string | null; to: string | null } {
-    if (!period) return { from: null, to: null };
-    const m = period.match(/^(\d{4})-(\d{2})$/);
-    if (!m) return { from: null, to: null };
-    const y = parseInt(m[1], 10);
-    const mo = parseInt(m[2], 10) - 1;
-    const fromDate = new Date(Date.UTC(y, mo, 1));
-    const toDate = new Date(Date.UTC(y, mo + 1, 0));
-    const pad = (n: number) => String(n).padStart(2, "0");
-    return {
-      from: `${fromDate.getUTCFullYear()}-${pad(fromDate.getUTCMonth() + 1)}-${pad(fromDate.getUTCDate())}`,
-      to: `${toDate.getUTCFullYear()}-${pad(toDate.getUTCMonth() + 1)}-${pad(toDate.getUTCDate())}`,
-    };
+  type Preset = "this_month" | "last_month" | "last_3" | "year" | "all" | "custom";
+  const [preset, setPreset] = useState<Preset>("this_month");
+  const [customFrom, setCustomFrom] = useState<string>("");
+  const [customTo, setCustomTo] = useState<string>("");
+
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const isoDay = (d: Date) =>
+    `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+
+  function getRange(): { from: string | null; to: string | null } {
+    const now = new Date();
+    const y = now.getUTCFullYear();
+    const mo = now.getUTCMonth();
+    if (preset === "all") return { from: null, to: null };
+    if (preset === "this_month") {
+      return {
+        from: isoDay(new Date(Date.UTC(y, mo, 1))),
+        to: isoDay(new Date(Date.UTC(y, mo + 1, 0))),
+      };
+    }
+    if (preset === "last_month") {
+      return {
+        from: isoDay(new Date(Date.UTC(y, mo - 1, 1))),
+        to: isoDay(new Date(Date.UTC(y, mo, 0))),
+      };
+    }
+    if (preset === "last_3") {
+      return {
+        from: isoDay(new Date(Date.UTC(y, mo - 2, 1))),
+        to: isoDay(new Date(Date.UTC(y, mo + 1, 0))),
+      };
+    }
+    if (preset === "year") {
+      return {
+        from: `${y}-01-01`,
+        to: isoDay(new Date(Date.UTC(y, mo + 1, 0))),
+      };
+    }
+    // custom — só filtra se ambas as datas válidas; senão trata como "all"
+    if (customFrom && customTo && customFrom <= customTo) {
+      return { from: customFrom, to: customTo };
+    }
+    return { from: null, to: null };
   }
+
+  const range = getRange();
+  const filtered = range.from !== null && range.to !== null;
+  const periodLabel =
+    preset === "all"
+      ? "no total"
+      : preset === "this_month"
+      ? "deste mês"
+      : preset === "last_month"
+      ? "do mês passado"
+      : preset === "last_3"
+      ? "dos últimos 3 meses"
+      : preset === "year"
+      ? "deste ano"
+      : "do período";
 
   async function load() {
     setLoading(true);
-    const { from, to } = periodRange();
-    const settlementUrl = period
-      ? `/api/settlements?from=${from}&to=${to}`
-      : "/api/settlements";
-    const dashUrl = period
-      ? `/api/dashboard?owner=COUPLE&month=${period}`
-      : `/api/dashboard?owner=COUPLE`;
+    const { from, to } = range;
+    const qs = filtered ? `?from=${from}&to=${to}` : "";
+    const settlementUrl = `/api/settlements${qs}`;
+    const dashUrl = `/api/dashboard?owner=COUPLE${qs ? `&from=${from}&to=${to}` : ""}`;
     const [s, d, dashRes] = await Promise.all([
       fetch("/api/settings").then((r) => r.json()),
       fetch(settlementUrl).then((r) => r.json()),
@@ -117,7 +155,7 @@ export function CasalClient() {
 
   useEffect(() => {
     load();
-  }, [period]);
+  }, [preset, customFrom, customTo]);
 
   async function remove(id: string) {
     const ok = await confirmDialog({ title: "Excluir este acerto?", variant: "destructive", confirmLabel: "Excluir" }); if (!ok) return;
@@ -158,28 +196,76 @@ export function CasalClient() {
         }
       />
 
-      <div className="flex flex-wrap items-end gap-3 mb-4 p-3 bg-muted/30 border border-border rounded-lg">
-        <div>
-          <label className="block text-[10px] font-medium text-muted-foreground mb-1 uppercase tracking-wide">
-            Mês
-          </label>
-          <input
-            type="month"
-            value={period}
-            onChange={(e) => setPeriod(e.target.value)}
-            className="px-2 py-1.5 rounded border border-border bg-background text-sm"
-          />
+      <div className="mb-4 p-3 bg-muted/30 border border-border rounded-lg space-y-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mr-1">
+            Período
+          </span>
+          {(
+            [
+              { key: "this_month", label: "Este mês" },
+              { key: "last_month", label: "Mês passado" },
+              { key: "last_3", label: "Últimos 3 meses" },
+              { key: "year", label: "Este ano" },
+              { key: "all", label: "Tudo" },
+              { key: "custom", label: "Personalizado" },
+            ] as { key: Preset; label: string }[]
+          ).map((opt) => (
+            <button
+              key={opt.key}
+              onClick={() => setPreset(opt.key)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition ${
+                preset === opt.key
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "border-border hover:bg-muted"
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
         </div>
-        {period && (
-          <button
-            onClick={() => setPeriod("")}
-            className="text-xs text-muted-foreground hover:text-foreground underline mb-1.5"
-          >
-            ver tudo
-          </button>
+
+        {preset === "custom" && (
+          <div className="flex flex-wrap items-end gap-3">
+            <div>
+              <label className="block text-[10px] font-medium text-muted-foreground mb-1 uppercase tracking-wide">
+                De
+              </label>
+              <input
+                type="date"
+                value={customFrom}
+                onChange={(e) => setCustomFrom(e.target.value)}
+                className="px-2 py-1.5 rounded border border-border bg-background text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-medium text-muted-foreground mb-1 uppercase tracking-wide">
+                Até
+              </label>
+              <input
+                type="date"
+                value={customTo}
+                onChange={(e) => setCustomTo(e.target.value)}
+                className="px-2 py-1.5 rounded border border-border bg-background text-sm"
+              />
+            </div>
+            {customFrom && customTo && customFrom > customTo && (
+              <p className="text-xs text-destructive mb-1.5">
+                A data inicial precisa ser anterior à final.
+              </p>
+            )}
+          </div>
         )}
-        <p className="text-xs text-muted-foreground ml-auto mb-1.5">
-          Filtra Saldo, Origem dos repasses e Histórico
+
+        <p className="text-xs text-muted-foreground">
+          {filtered ? (
+            <>
+              Mostrando de <strong>{new Date(range.from + "T00:00:00").toLocaleDateString("pt-BR")}</strong>{" "}
+              a <strong>{new Date(range.to + "T00:00:00").toLocaleDateString("pt-BR")}</strong>. Filtra Saldo, Origem dos repasses e Histórico.
+            </>
+          ) : (
+            <>Mostrando <strong>todo o histórico</strong>. Filtra Saldo, Origem dos repasses e Histórico.</>
+          )}
         </p>
       </div>
 
@@ -207,13 +293,13 @@ export function CasalClient() {
                     <CheckCircle2 className="w-10 h-10 text-success mx-auto mb-2" />
                     <p className="text-xl font-display tracking-tight">Tudo certo!</p>
                     <p className="text-sm text-muted-foreground mt-1">
-                      Ninguém deve nada{period ? " neste mês" : ""}.
+                      Ninguém deve nada{filtered ? ` ${periodLabel}` : ""}.
                     </p>
                   </div>
                 ) : (
                   <div>
                     <p className="text-xs text-muted-foreground uppercase tracking-wide mb-2">
-                      Saldo {period ? "do mês" : "total"}
+                      Saldo {filtered ? periodLabel : "total"}
                     </p>
                     <div className="flex items-center gap-3 flex-wrap mb-3">
                       <span className="text-lg font-medium">{ownerName(debtor)}</span>
@@ -292,7 +378,9 @@ export function CasalClient() {
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
                 <div className="bg-card border border-border rounded-xl p-5">
                   <div className="flex items-center justify-between mb-2">
-                    <p className="text-xs text-muted-foreground">Despesas do mês (casal)</p>
+                    <p className="text-xs text-muted-foreground">
+                      Despesas {filtered ? periodLabel : "totais"} (casal)
+                    </p>
                     <TrendingDown className="w-4 h-4 text-muted-foreground" />
                   </div>
                   <p className="text-2xl font-bold tabular-nums text-destructive">
@@ -310,10 +398,12 @@ export function CasalClient() {
               </div>
 
               <div className="bg-card border border-border rounded-xl p-5 mb-6">
-                <h3 className="text-sm font-semibold mb-3">Despesas do mês por categoria</h3>
+                <h3 className="text-sm font-semibold mb-3">
+                  Despesas {filtered ? periodLabel : "totais"} por categoria
+                </h3>
                 {dash.expensesByCategory.length === 0 ? (
                   <p className="text-sm text-muted-foreground py-6 text-center">
-                    Nenhuma despesa neste mês.
+                    Nenhuma despesa {filtered ? periodLabel : "registrada"}.
                   </p>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
@@ -359,12 +449,12 @@ export function CasalClient() {
               <h2 className="text-base font-semibold">Histórico de acertos</h2>
               <span className="text-xs text-muted-foreground ml-auto">
                 {settlements.length} acerto{settlements.length === 1 ? "" : "s"}{" "}
-                {period ? "no mês" : "no total"}
+                {filtered ? periodLabel : "no total"}
               </span>
             </div>
             {settlements.length === 0 ? (
               <p className="p-6 text-sm text-muted-foreground text-center">
-                Nenhum acerto registrado {period ? "neste mês" : "ainda"}.
+                Nenhum acerto registrado {filtered ? periodLabel : "ainda"}.
               </p>
             ) : (
               <>
