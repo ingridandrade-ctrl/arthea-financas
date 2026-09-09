@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArtheaLogo } from "@/components/financas/logo";
 import { ThemeToggle } from "@/components/financas/theme-toggle";
+import { PasswordInput } from "@/components/financas/password-input";
 
 export function SetupForm() {
   const router = useRouter();
@@ -88,8 +89,7 @@ export function SetupForm() {
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">Senha (mínimo 6 caracteres)</label>
-            <input
-              type="password"
+            <PasswordInput
               required
               minLength={6}
               value={password}

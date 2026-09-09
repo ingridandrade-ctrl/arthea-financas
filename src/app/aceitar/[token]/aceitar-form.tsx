@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArtheaLogo } from "@/components/financas/logo";
 import { ThemeToggle } from "@/components/financas/theme-toggle";
+import { PasswordInput } from "@/components/financas/password-input";
 
 type InviteInfo = {
   email: string;
@@ -120,9 +121,8 @@ export function AceitarForm({ token }: { token: string }) {
               <label className="block text-sm font-medium mb-1">
                 {info.isExistingUser ? "Sua senha" : "Crie uma senha"}
               </label>
-              <input
+              <PasswordInput
                 required
-                type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 autoComplete={info.isExistingUser ? "current-password" : "new-password"}

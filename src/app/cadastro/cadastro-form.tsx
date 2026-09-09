@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArtheaLogo } from "@/components/financas/logo";
 import { ThemeToggle } from "@/components/financas/theme-toggle";
+import { PasswordInput } from "@/components/financas/password-input";
 
 export function CadastroForm() {
   const router = useRouter();
@@ -75,9 +76,8 @@ export function CadastroForm() {
 
           <div>
             <label className="block text-sm font-medium mb-1">Senha</label>
-            <input
+            <PasswordInput
               required
-              type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               autoComplete="new-password"

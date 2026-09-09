@@ -206,17 +206,21 @@ export function LancamentosClient() {
         router.push("/cartoes");
         return;
       }
-      await fetch(`/api/invoices/${m.invoiceId}`, {
+      const res = await fetch(`/api/invoices/${m.invoiceId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "reopen" }),
       });
+      if (res.ok) toast.success("Fatura reaberta");
+      else toast.error("Erro ao reabrir fatura");
     } else {
-      await fetch(`/api/transactions/${m.id}`, {
+      const res = await fetch(`/api/transactions/${m.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ paid: paidValue }),
       });
+      if (res.ok) toast.success(paidValue ? "Marcado como pago" : "Marcado como pendente");
+      else toast.error("Erro ao atualizar");
     }
     loadTx();
   }
@@ -573,6 +577,17 @@ export function LancamentosClient() {
                     {formatCurrency(m.amount)}
                   </td>
                   <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+                    {/* Quick-action: marcar pendente/atrasado como pago em 1 clique.
+                        Antes só dava clicando na pill de status e escolhendo no menu. */}
+                    {(m.status === "pending" || m.status === "overdue") && m.type !== "TRANSFER" && (
+                      <button
+                        onClick={() => setPaid(m, true)}
+                        title={m.kind === "invoice" ? "Pagar fatura" : "Marcar como paga"}
+                        className="p-1.5 rounded-md hover:bg-success/10 text-muted-foreground hover:text-success"
+                      >
+                        <Check className="w-4 h-4" />
+                      </button>
+                    )}
                     {m.kind === "transaction" ? (
                       <>
                         <button

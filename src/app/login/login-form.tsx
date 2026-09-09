@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArtheaLogo } from "@/components/financas/logo";
 import { ThemeToggle } from "@/components/financas/theme-toggle";
+import { PasswordInput } from "@/components/financas/password-input";
 
 export function LoginForm() {
   const router = useRouter();
@@ -54,8 +55,7 @@ export function LoginForm() {
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">Senha</label>
-            <input
-              type="password"
+            <PasswordInput
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}

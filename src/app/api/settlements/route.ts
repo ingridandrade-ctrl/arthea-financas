@@ -15,7 +15,16 @@ export async function GET(req: Request) {
 
     const [settlements, balance] = await Promise.all([
       prisma.finSettlement.findMany({
-        where: { householdId: household.id },
+        where: {
+          householdId: household.id,
+          // Aplica o mesmo filtro de data que já é usado no balance —
+          // sem isso o Histórico mostrava TODOS os acertos ignorando o
+          // período selecionado na aba Casal, contradizendo a label
+          // ("X acertos deste mês").
+          ...(from || to
+            ? { date: { ...(from ? { gte: from } : {}), ...(to ? { lte: to } : {}) } }
+            : {}),
+        },
         orderBy: [{ date: "desc" }, { createdAt: "desc" }],
       }),
       computeCoupleBalance(household.id, from, to),

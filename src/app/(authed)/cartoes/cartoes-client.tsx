@@ -6,6 +6,7 @@ import { confirmDialog } from "@/components/ui/confirm-dialog";
 import { CreditCard, CheckCircle2, Clock, AlertTriangle, Lock, Sparkles, Trash2, Pencil, CalendarClock, ArrowRightLeft } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { PageHeader } from "@/components/financas/page-header";
+import { PasswordInput } from "@/components/financas/password-input";
 import { formatCurrency } from "@/lib/utils";
 
 type Account = {
@@ -1711,8 +1712,7 @@ function ImportInvoiceModal({
                     (deixe em branco se não tiver)
                   </span>
                 </label>
-                <input
-                  type="password"
+                <PasswordInput
                   value={pdfPassword}
                   onChange={(e) => {
                     setPdfPassword(e.target.value);
