@@ -36,9 +36,17 @@ export async function computeCoupleBalance(
 ): Promise<CoupleBalance> {
   const txWhere: any = { householdId, type: "EXPENSE" };
   if (from || to) {
-    txWhere.date = {};
-    if (from) txWhere.date.gte = from;
-    if (to) txWhere.date.lte = to;
+    const range: any = {};
+    if (from) range.gte = from;
+    if (to) range.lte = to;
+    // Compra de cartão conta no mês da FATURA (dueDate), não no da compra —
+    // mesma regra do Dashboard (effectiveDate). Antes filtrava por tx.date e
+    // a parcela 4/10 comprada em maio, cobrada em setembro, sumia do Casal
+    // de setembro e aparecia em maio.
+    txWhere.OR = [
+      { invoiceId: null, date: range },
+      { invoice: { dueDate: range } },
+    ];
   }
 
   const transactions = await prisma.finTransaction.findMany({

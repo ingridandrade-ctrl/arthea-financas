@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireHousehold, HouseholdAuthError } from "@/lib/financas/session";
-import { parseInvoiceText } from "@/lib/financas/parse-invoice";
+import { parseInvoiceText, parseFailureResponse } from "@/lib/financas/parse-invoice";
 import { getMerchantHints } from "@/lib/financas/merchant-hints";
+import { applyHistoryToRows } from "@/lib/financas/import-history";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -64,14 +65,14 @@ export async function POST(req: Request) {
     });
 
     if (!result.parsed) {
-      return NextResponse.json(
-        { error: "Não consegui interpretar a resposta da IA. Tente novamente." },
-        { status: 500 }
-      );
+      const { error, status } = parseFailureResponse(result.reason ?? "bad_json");
+      return NextResponse.json({ error, code: result.reason ?? "bad_json" }, { status });
     }
 
+    const transactions = await applyHistoryToRows(household.id, account.id, result.parsed, hints);
+
     return NextResponse.json({
-      transactions: result.parsed,
+      transactions,
       categories,
       account: { id: account.id, name: account.name, color: account.color },
       hintsUsed: hints.length,

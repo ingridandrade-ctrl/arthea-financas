@@ -12,7 +12,7 @@ const INSTALLMENT_PATTERNS: RegExp[] = [
   /\b(\d+)\s+de\s+(\d+)\b/i,
 ];
 
-function normalizeBase(d: string): string {
+export function normalizeBase(d: string): string {
   let out = d.toLowerCase();
   for (const p of INSTALLMENT_PATTERNS) out = out.replace(p, " ");
   return out.replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();

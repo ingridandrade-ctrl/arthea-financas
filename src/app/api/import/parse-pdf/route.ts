@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireHousehold, HouseholdAuthError } from "@/lib/financas/session";
-import { parseInvoiceText } from "@/lib/financas/parse-invoice";
+import { parseInvoiceText, parseFailureResponse } from "@/lib/financas/parse-invoice";
 import { getMerchantHints } from "@/lib/financas/merchant-hints";
+import { applyHistoryToRows } from "@/lib/financas/import-history";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -73,7 +74,10 @@ export async function POST(req: Request) {
       );
     }
 
-    if (!extraction.text || extraction.text.trim().length < 30) {
+    // textChars é medido ANTES dos marcadores "--- Página N ---": com eles
+    // um PDF escaneado de 2+ páginas passava do limite, gastava a IA e
+    // voltava "Nenhuma compra identificada".
+    if (!extraction.text || (extraction.textChars ?? 0) < 30) {
       return NextResponse.json(
         {
           error:
@@ -92,14 +96,14 @@ export async function POST(req: Request) {
     });
 
     if (!result.parsed) {
-      return NextResponse.json(
-        { error: "Não consegui interpretar a resposta da IA. Tente novamente." },
-        { status: 500 }
-      );
+      const { error, status } = parseFailureResponse(result.reason ?? "bad_json");
+      return NextResponse.json({ error, code: result.reason ?? "bad_json" }, { status });
     }
 
+    const transactions = await applyHistoryToRows(household.id, account.id, result.parsed, hints);
+
     return NextResponse.json({
-      transactions: result.parsed,
+      transactions,
       categories,
       account: { id: account.id, name: account.name, color: account.color },
       stats: {
@@ -123,15 +127,17 @@ export async function POST(req: Request) {
 async function extractTextFromPdf(
   data: Uint8Array,
   password: string
-): Promise<{ text?: string; pages?: number; needsPassword?: boolean }> {
+): Promise<{ text?: string; textChars?: number; pages?: number; needsPassword?: boolean }> {
   const { getDocumentProxy, extractText } = await import("unpdf");
   try {
     const pdf = await getDocumentProxy(data, { password });
     const { totalPages, text } = await extractText(pdf, { mergePages: false });
-    const combined = (Array.isArray(text) ? text : [text])
+    const pageTexts = Array.isArray(text) ? text : [text];
+    const textChars = pageTexts.reduce((n, p) => n + (p ?? "").trim().length, 0);
+    const combined = pageTexts
       .map((pageText, i) => `\n--- Página ${i + 1} ---\n${pageText}\n`)
       .join("");
-    return { text: combined, pages: totalPages };
+    return { text: combined, textChars, pages: totalPages };
   } catch (err: any) {
     if (err?.name === "PasswordException") {
       return { needsPassword: true };

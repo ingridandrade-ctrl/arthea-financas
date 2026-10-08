@@ -5,6 +5,12 @@ import { ensureInvoice, ensureInvoiceForMonth } from "@/lib/financas/credit-card
 import { parseLocalDate } from "@/lib/financas/dates";
 import { installmentGroupId, parseInstallment } from "@/lib/financas/installments";
 
+export const runtime = "nodejs";
+// Sem isso a rota cai no default do plano da Vercel (10s no Hobby), e uma
+// fatura de 100+ linhas no Neon frio não fecha a tempo. parse-pdf/parse já
+// exportam 60; o commit precisa do mesmo teto.
+export const maxDuration = 60;
+
 const VALID_OWNERS = ["PARTNER_A", "PARTNER_B", "COUPLE"];
 
 type Row = {
@@ -152,9 +158,20 @@ export async function POST(req: Request) {
         });
 
         if (existing) {
+          // Parcela já existe (projetada ou importada no mês passado): só o
+          // que vem do banco é atualizado. Dono, quem pagou, categoria e
+          // descrição são classificação manual da usuária e precisam
+          // sobreviver à reimportação — antes eram sobrescritos pelo palpite
+          // da IA todo mês. Categoria só entra se ainda estava vazia.
           const updated = await tx.finTransaction.update({
             where: { id: existing.id },
-            data: { ...baseData, installmentProjected: false },
+            data: {
+              invoiceId: baseData.invoiceId,
+              date: baseData.date,
+              amount: baseData.amount,
+              installmentProjected: false,
+              ...(existing.categoryId ? {} : { categoryId }),
+            },
           });
           createdIds.push(updated.id);
         } else {

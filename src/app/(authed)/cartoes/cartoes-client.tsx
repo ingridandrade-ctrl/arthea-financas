@@ -77,8 +77,10 @@ const STATUS_COLOR: Record<Invoice["status"], string> = {
   OVERDUE: "text-destructive",
 };
 
+// Recebe o month do banco (0-11). Antes assumia 1-12 e a confirmação de
+// excluir a fatura de setembro dizia "agosto".
 function monthName(month: number) {
-  return new Date(2000, month - 1, 1).toLocaleDateString("pt-BR", { month: "long" });
+  return new Date(2000, month, 1).toLocaleDateString("pt-BR", { month: "long" });
 }
 
 function ownerLabel(owner: "PARTNER_A" | "PARTNER_B" | "COUPLE", settings: Settings | null) {
@@ -776,6 +778,7 @@ export function CartoesClient() {
           settings={settings}
           existingInvoice={reviewingInvoice}
           onClose={() => setReviewingInvoice(null)}
+          onRefresh={load}
           onImported={() => {
             setReviewingInvoice(null);
             load();
@@ -806,7 +809,8 @@ function MoveInvoiceModal({
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const sourceMonth = `${invoice.year}-${String(invoice.month).padStart(2, "0")}`;
+  // month do banco é 0-11; o <input type="month"> e a rota /move falam 1-12.
+  const sourceMonth = `${invoice.year}-${String(invoice.month + 1).padStart(2, "0")}`;
   const [target, setTarget] = useState(sourceMonth);
   const [deleteSource, setDeleteSource] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -1346,6 +1350,23 @@ type ParsedRow = {
   excluded?: boolean;
   matchStatus?: "new" | "matched";
   matchedTxId?: string | null;
+  // Preenchido pelo servidor quando dono/categoria vieram do histórico
+  // (parcela anterior da mesma compra, ou mesmo estabelecimento).
+  inherited?: { source: "installment" | "history"; label: string } | null;
+};
+
+// Cores por dono (tokens do tema, com variante dark em globals.css). Numa
+// revisão de 150 linhas tudo branco vira sopa — a cor da linha diz na hora
+// de quem é a compra.
+const OWNER_ROW_CLASS: Record<Owner, string> = {
+  PARTNER_A: "bg-partner-a/10 border-l-partner-a",
+  PARTNER_B: "bg-partner-b/10 border-l-partner-b",
+  COUPLE: "bg-couple/10 border-l-couple",
+};
+const OWNER_CHIP_ACTIVE: Record<Owner, string> = {
+  PARTNER_A: "bg-partner-a border-partner-a text-white dark:text-background",
+  PARTNER_B: "bg-partner-b border-partner-b text-white dark:text-background",
+  COUPLE: "bg-couple border-couple text-white dark:text-background",
 };
 
 function normalizeDesc(s: string): string {
@@ -1367,6 +1388,7 @@ function ImportInvoiceModal({
   existingInvoice,
   onClose,
   onImported,
+  onRefresh,
 }: {
   cards: Account[];
   defaultCardId: string;
@@ -1374,6 +1396,7 @@ function ImportInvoiceModal({
   existingInvoice?: Invoice | null;
   onClose: () => void;
   onImported: () => void;
+  onRefresh?: () => void;
 }) {
   const reviewMode = !!existingInvoice;
   const [step, setStep] = useState<"paste" | "review">("paste");
@@ -1384,13 +1407,20 @@ function ImportInvoiceModal({
   const [pdfPassword, setPdfPassword] = useState("");
   const [needsPassword, setNeedsPassword] = useState(false);
   const [rows, setRows] = useState<ParsedRow[]>([]);
+  // Cópia local das compras já no sistema: excluir uma delas na revisão
+  // atualiza só esta lista, sem fechar o modal e perder a análise.
+  const [existingTxs, setExistingTxs] = useState(existingInvoice?.transactions ?? []);
   const [categories, setCategories] = useState<Category[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const today = new Date();
+  // O banco guarda month 0-11; o <input type="month"> e o commit falam 1-12.
+  // Sem o +1 a revisão de setembro vinha pré-preenchida como agosto (e em
+  // janeiro virava "2026-00", campo vazio, e cada linha caía no mês da
+  // data da compra).
   const [invoiceMonth, setInvoiceMonth] = useState<string>(
     existingInvoice
-      ? `${existingInvoice.year}-${String(existingInvoice.month).padStart(2, "0")}`
+      ? `${existingInvoice.year}-${String(existingInvoice.month + 1).padStart(2, "0")}`
       : `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`
   );
   const [filterFrom, setFilterFrom] = useState("");
@@ -1404,30 +1434,50 @@ function ImportInvoiceModal({
 
   const partnerA = settings?.partnerAName || "Pessoa A";
   const partnerB = settings?.partnerBName || "Pessoa B";
+  const ownerShort = (o: Owner) =>
+    o === "COUPLE" ? "Casal" : (o === "PARTNER_A" ? partnerA : partnerB).split(" ")[0];
 
   async function analyze() {
     setBusy(true);
     setError(null);
     let res: Response;
-    if (mode === "pdf") {
-      if (!pdfFile) {
-        setBusy(false);
-        setError("Selecione um arquivo PDF");
-        return;
+    let rawText = "";
+    try {
+      // 65s: um pouco acima do maxDuration (60s) das rotas de parse, pra o
+      // servidor conseguir responder o 504 dele antes de a gente desistir.
+      const signal = AbortSignal.timeout(65_000);
+      if (mode === "pdf") {
+        if (!pdfFile) {
+          setBusy(false);
+          setError("Selecione um arquivo PDF");
+          return;
+        }
+        const fd = new FormData();
+        fd.append("accountId", accountId);
+        fd.append("file", pdfFile);
+        if (pdfPassword) fd.append("password", pdfPassword);
+        res = await fetch("/api/import/parse-pdf", { method: "POST", body: fd, signal });
+      } else {
+        res = await fetch("/api/import/parse", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ accountId, text }),
+          signal,
+        });
       }
-      const fd = new FormData();
-      fd.append("accountId", accountId);
-      fd.append("file", pdfFile);
-      if (pdfPassword) fd.append("password", pdfPassword);
-      res = await fetch("/api/import/parse-pdf", { method: "POST", body: fd });
-    } else {
-      res = await fetch("/api/import/parse", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accountId, text }),
-      });
+      rawText = await res.text();
+    } catch (err: any) {
+      // Sem esse catch, queda de rede/timeout rejeitava a promise e o botão
+      // ficava em "Analisando..." pra sempre.
+      console.error("[import] analyze failed", err);
+      setBusy(false);
+      setError(
+        err?.name === "TimeoutError" || err?.name === "AbortError"
+          ? "A análise demorou demais e foi interrompida. Tente um PDF só com as páginas de lançamentos, ou o modo 'Colar texto'. O arquivo continua selecionado."
+          : "Falha de conexão durante a análise. Verifica sua internet e tenta de novo — o arquivo continua selecionado."
+      );
+      return;
     }
-    const rawText = await res.text();
     let data: any = {};
     try {
       data = JSON.parse(rawText);
@@ -1454,7 +1504,7 @@ function ImportInvoiceModal({
     const isProjectionCategory = (name: string | null | undefined) =>
       typeof name === "string" && name.toLowerCase().includes("parcelad");
     const existingPool = existingInvoice
-      ? existingInvoice.transactions
+      ? existingTxs
           .filter((t) => !isProjectionCategory(t.category?.name))
           .map((t) => ({
             id: t.id,
@@ -1471,6 +1521,7 @@ function ImportInvoiceModal({
         categoryId: t.categoryId ?? null,
         owner: (t.owner as Owner) || "COUPLE",
         paidByOwner: null,
+        inherited: t.inherited ?? null,
         excluded: false,
       };
       if (existingInvoice) {
@@ -1508,6 +1559,18 @@ function ImportInvoiceModal({
         paidByOwner: r.paidByOwner ?? null,
         forceNew: reviewMode && r.matchStatus === "new",
       }));
+    // O servidor descarta em silêncio linha com valor 0 ou sem descrição
+    // ("+ Adicionar linha" nasce com amount 0). Barrar aqui, com aviso.
+    const invalid = rows.filter(
+      (r) => !r.excluded && (!(r.amount > 0) || !r.description.trim())
+    );
+    if (invalid.length > 0) {
+      setError(
+        `${invalid.length} linha${invalid.length === 1 ? "" : "s"} com valor zerado ou sem descrição — corrige ou marca como excluída antes de confirmar.`
+      );
+      setBusy(false);
+      return;
+    }
     if (toSend.length === 0) {
       setError("Nenhuma linha selecionada para importar");
       setBusy(false);
@@ -1538,6 +1601,10 @@ function ImportInvoiceModal({
         setError(data?.error || "Erro ao salvar");
         return;
       }
+      const created = typeof data?.created === "number" ? data.created : toSend.length;
+      toast.success(
+        `${created} lançamento${created === 1 ? "" : "s"} criado${created === 1 ? "" : "s"}`
+      );
       onImported();
     } catch (err: any) {
       // Sem esse catch qualquer falha de rede (Neon dormindo, timeout do
@@ -1554,7 +1621,10 @@ function ImportInvoiceModal({
   }
 
   function updateRow(i: number, patch: Partial<ParsedRow>) {
-    setRows((rs) => rs.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+    // Mexeu no dono ou na categoria à mão → o selo "herdado" deixa de valer.
+    const p: Partial<ParsedRow> =
+      "owner" in patch || "categoryId" in patch ? { ...patch, inherited: null } : patch;
+    setRows((rs) => rs.map((r, idx) => (idx === i ? { ...r, ...p } : r)));
   }
 
   const visibleRowsWithIdx = rows
@@ -1594,6 +1664,21 @@ function ImportInvoiceModal({
     setRows((rs) => rs.map((r, i) => (visibleIdx.has(i) ? { ...r, excluded } : r)));
   }
 
+  async function bulkSetOwner(owner: Owner) {
+    if (!anyFilterActive) {
+      const ok = await confirmDialog({
+        title: `Marcar todas as ${rows.length} linhas como ${ownerShort(owner)}?`,
+        description: "Use um filtro (texto, dono, categoria) se quiser aplicar só a uma parte.",
+        confirmLabel: "Marcar",
+      });
+      if (!ok) return;
+    }
+    const visibleIdx = new Set(visibleRowsWithIdx.map((x) => x.i));
+    setRows((rs) =>
+      rs.map((r, i) => (visibleIdx.has(i) ? { ...r, owner, inherited: null } : r))
+    );
+  }
+
   function addManualRow() {
     // Default date to the chosen invoice month's first day, fallback to today
     const m = invoiceMonth.match(/^(\d{4})-(\d{2})$/);
@@ -1623,9 +1708,27 @@ function ImportInvoiceModal({
 
   const total = rows.filter((r) => !r.excluded).reduce((s, r) => s + r.amount, 0);
   const includedCount = rows.filter((r) => !r.excluded).length;
+  const inheritedCount = rows.filter((r) => r.inherited).length;
+
+  // Clique fora / Esc / X: na etapa de revisão (ou no meio de uma análise)
+  // isso jogava fora 150 linhas editadas sem perguntar — PDF e IA de novo.
+  async function requestClose() {
+    if (busy || (step === "review" && rows.length > 0)) {
+      const ok = await confirmDialog({
+        title: "Fechar e perder a revisão?",
+        description: busy
+          ? "A análise ainda está rodando. Se fechar agora, vai precisar enviar o arquivo de novo."
+          : `As ${rows.length} linhas analisadas serão descartadas. Você vai precisar enviar o PDF de novo.`,
+        variant: "destructive",
+        confirmLabel: "Fechar mesmo assim",
+      });
+      if (!ok) return;
+    }
+    onClose();
+  }
 
   return (
-    <Modal title="Importar fatura com IA" onClose={onClose} maxWidth="max-w-5xl">
+    <Modal title="Importar fatura com IA" onClose={requestClose} maxWidth="max-w-5xl">
       {step === "paste" ? (
         <div className="space-y-4">
           <div>
@@ -1780,10 +1883,10 @@ function ImportInvoiceModal({
           {reviewMode && existingInvoice ? (() => {
             const isProjectionCategory = (name: string | null | undefined) =>
               typeof name === "string" && name.toLowerCase().includes("parcelad");
-            const considerable = existingInvoice.transactions.filter(
+            const considerable = existingTxs.filter(
               (t) => !isProjectionCategory(t.category?.name)
             );
-            const ignored = existingInvoice.transactions.length - considerable.length;
+            const ignored = existingTxs.length - considerable.length;
             const matched = rows.filter((r) => r.matchStatus === "matched").length;
             const newRows = rows.filter((r) => r.matchStatus === "new").length;
             const matchedIds = new Set(
@@ -2059,13 +2162,33 @@ function ImportInvoiceModal({
               <strong>{includedCount}</strong> de <strong>{rows.length}</strong> compras
               selecionadas — total{" "}
               <strong className="tabular-nums">{formatCurrency(total)}</strong>
+              {inheritedCount > 0 && (
+                <span className="text-xs text-muted-foreground ml-2">
+                  · {inheritedCount} pré-classificada{inheritedCount === 1 ? "" : "s"} pelo histórico
+                </span>
+              )}
               {anyFilterActive && (
                 <span className="text-xs text-muted-foreground ml-2">
                   ({visibleRows.length} visíveis com o filtro)
                 </span>
               )}
             </p>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs text-muted-foreground">
+                Marcar {anyFilterActive ? "visíveis" : "todas"} como:
+              </span>
+              {(["PARTNER_A", "PARTNER_B", "COUPLE"] as const).map((o) => (
+                <button
+                  key={o}
+                  type="button"
+                  onClick={() => bulkSetOwner(o)}
+                  className={`text-xs px-2 py-1 rounded-full border font-medium hover:opacity-90 ${OWNER_CHIP_ACTIVE[o]}`}
+                  title={`Marcar ${anyFilterActive ? "as linhas visíveis" : "todas as linhas"} como ${ownerShort(o)}`}
+                >
+                  {ownerShort(o)}
+                </button>
+              ))}
+              <span className="w-px h-4 bg-border mx-1" aria-hidden />
               {anyFilterActive && (
                 <>
                   <button
@@ -2117,7 +2240,7 @@ function ImportInvoiceModal({
                 {visibleRowsWithIdx.map(({ row: r, i }) => (
                   <tr
                     key={i}
-                    className={`border-t border-border ${
+                    className={`border-t border-border border-l-4 ${OWNER_ROW_CLASS[r.owner]} ${
                       r.excluded ? "opacity-40 line-through" : ""
                     }`}
                   >
@@ -2146,6 +2269,18 @@ function ImportInvoiceModal({
                           onChange={(e) => updateRow(i, { description: e.target.value })}
                           className="flex-1 px-1 py-0.5 rounded border border-border bg-background"
                         />
+                        {r.inherited && (
+                          <span
+                            title={
+                              r.inherited.source === "installment"
+                                ? "Dono e categoria copiados da parcela anterior desta mesma compra. Mude o chip pra sobrescrever."
+                                : "Dono e categoria copiados de compras anteriores neste estabelecimento. Mude o chip pra sobrescrever."
+                            }
+                            className="text-[10px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground whitespace-nowrap"
+                          >
+                            ⟲ {r.inherited.label}
+                          </span>
+                        )}
                         {reviewMode && (
                           <select
                             value={r.matchStatus ?? "new"}
@@ -2198,15 +2333,23 @@ function ImportInvoiceModal({
                       </select>
                     </td>
                     <td className="px-2 py-1.5">
-                      <select
-                        value={r.owner}
-                        onChange={(e) => updateRow(i, { owner: e.target.value as Owner })}
-                        className="px-1 py-0.5 rounded border border-border bg-background"
-                      >
-                        <option value="COUPLE">Casal</option>
-                        <option value="PARTNER_A">{partnerA}</option>
-                        <option value="PARTNER_B">{partnerB}</option>
-                      </select>
+                      <div className="flex gap-1">
+                        {(["PARTNER_A", "PARTNER_B", "COUPLE"] as const).map((o) => (
+                          <button
+                            key={o}
+                            type="button"
+                            onClick={() => updateRow(i, { owner: o })}
+                            title={o === "COUPLE" ? "Casal" : o === "PARTNER_A" ? partnerA : partnerB}
+                            className={`px-2 py-0.5 rounded-full text-[11px] font-medium border whitespace-nowrap transition ${
+                              r.owner === o
+                                ? OWNER_CHIP_ACTIVE[o]
+                                : "border-border text-muted-foreground hover:bg-muted"
+                            }`}
+                          >
+                            {ownerShort(o)}
+                          </button>
+                        ))}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -2214,15 +2357,14 @@ function ImportInvoiceModal({
             </table>
           </div>
 
-          {reviewMode && existingInvoice && existingInvoice.transactions.length > 0 && (
+          {reviewMode && existingTxs.length > 0 && (
             <details className="border border-border rounded-lg" open>
               <summary className="px-3 py-2 cursor-pointer bg-muted/30 text-sm font-medium flex items-center justify-between">
                 <span>
-                  Lançamentos já no sistema desta fatura ({existingInvoice.transactions.length})
+                  Lançamentos já no sistema desta fatura ({existingTxs.length})
                 </span>
                 <span className="text-xs text-muted-foreground font-normal">
-                  Use o pincel pra editar a data, ou a lixeira pra excluir compras erradas — sem
-                  fechar essa revisão.
+                  Use a lixeira pra excluir compras erradas — sem fechar essa revisão.
                 </span>
               </summary>
               <div className="max-h-[35vh] overflow-y-auto">
@@ -2237,7 +2379,7 @@ function ImportInvoiceModal({
                     </tr>
                   </thead>
                   <tbody>
-                    {existingInvoice.transactions.map((t) => (
+                    {existingTxs.map((t) => (
                       <tr key={t.id} className="border-t border-border hover:bg-muted/20">
                         <td className="px-2 py-1">
                           {new Date(t.date).toLocaleDateString("pt-BR")}
@@ -2265,8 +2407,16 @@ function ImportInvoiceModal({
                             onClick={async () => {
                               const ok = await confirmDialog({ title: `Excluir "${t.description}" do sistema?`, variant: "destructive", confirmLabel: "Excluir" });
                               if (!ok) return;
-                              await fetch(`/api/transactions/${t.id}`, { method: "DELETE" });
-                              onImported();
+                              const res = await fetch(`/api/transactions/${t.id}`, { method: "DELETE" });
+                              if (!res.ok) {
+                                toast.error("Erro ao excluir");
+                                return;
+                              }
+                              // Antes chamava onImported(), que fecha o modal e
+                              // joga fora a revisão inteira.
+                              setExistingTxs((xs) => xs.filter((x) => x.id !== t.id));
+                              toast.success("Excluído");
+                              onRefresh?.();
                             }}
                             className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
                             title="Excluir do sistema"

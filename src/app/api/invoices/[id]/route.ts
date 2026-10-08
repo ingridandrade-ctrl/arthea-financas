@@ -67,7 +67,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
             type: "TRANSFER",
             amount: total,
             date: paidAt,
-            description: `Pagamento fatura ${inv.account.name} ${String(inv.month).padStart(2, "0")}/${inv.year}`,
+            description: `Pagamento fatura ${inv.account.name} ${String(inv.month + 1).padStart(2, "0")}/${inv.year}`,
             owner: "COUPLE",
             accountId: paymentAccountId,
             toAccountId: inv.accountId,

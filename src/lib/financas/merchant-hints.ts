@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import type { MerchantHint } from "./parse-invoice";
+import { normalizeBase } from "./installments";
 
 const STOPWORDS = new Set([
   "de", "da", "do", "e", "ltda", "me", "sa", "s.a", "s/a", "eireli", "comercio",
@@ -16,8 +17,13 @@ function tokenize(description: string): string[] {
     .filter((t) => t.length > 1 && !STOPWORDS.has(t));
 }
 
-function patternFor(description: string): string | null {
-  const tokens = tokenize(description);
+// Chave de "mesmo estabelecimento". Tira o sufixo de parcela ANTES de
+// tokenizar — sem isso "LOJA X 04/10" e "LOJA X 05/10" viravam chaves
+// diferentes ("loja 04" / "loja 05"), cada uma com 1 ocorrência, e
+// parcelamento nunca entrava no histórico.
+export function merchantKey(description: string): string | null {
+  const ascii = description.normalize("NFD").replace(/\p{M}+/gu, "");
+  const tokens = tokenize(normalizeBase(ascii));
   if (tokens.length === 0) return null;
   return tokens.slice(0, 2).join(" ");
 }
@@ -39,12 +45,13 @@ export async function getMerchantHints(householdId: string): Promise<MerchantHin
   const since = new Date();
   since.setMonth(since.getMonth() - 12);
 
+  // Sem o filtro de categoria: uma compra que a usuária só marcou como
+  // "Casal" (sem categoria) também ensina o dono.
   const transactions = await prisma.finTransaction.findMany({
     where: {
       householdId,
       type: "EXPENSE",
       date: { gte: since },
-      categoryId: { not: null },
     },
     select: {
       description: true,
@@ -62,7 +69,7 @@ export async function getMerchantHints(householdId: string): Promise<MerchantHin
   >();
 
   for (const tx of transactions) {
-    const p = patternFor(tx.description);
+    const p = merchantKey(tx.description);
     if (!p) continue;
     const bucket = grouped.get(p) ?? { categoryIds: [], categoryNames: [], owners: [] };
     if (tx.categoryId) bucket.categoryIds.push(tx.categoryId);
@@ -88,5 +95,7 @@ export async function getMerchantHints(householdId: string): Promise<MerchantHin
   }
 
   hints.sort((a, b) => b.occurrences - a.occurrences);
-  return hints.slice(0, 80);
+  // O prompt usa só os 80 primeiros; a aplicação determinística
+  // (import-history) usa todos.
+  return hints.slice(0, 500);
 }

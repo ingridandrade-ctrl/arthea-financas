@@ -11,19 +11,23 @@ export async function GET(req: Request) {
     const start = new Date(Date.UTC(year, 0, 1));
     const end = new Date(Date.UTC(year + 1, 0, 1));
 
-    const [allYearTx, byCategory, accounts, allTimeForAccounts] = await Promise.all([
+    // Compra de cartão conta no mês da FATURA (dueDate), não no da compra —
+    // mesma regra do Dashboard. Senão a parcela comprada em maio e cobrada
+    // em setembro aparecia em maio no relatório anual.
+    const yearRange = { gte: start, lt: end };
+    const [allYearTx, accounts, allTimeForAccounts] = await Promise.all([
       prisma.finTransaction.findMany({
-        where: { householdId: household.id, date: { gte: start, lt: end } },
-        select: { type: true, amount: true, date: true, categoryId: true },
-      }),
-      prisma.finTransaction.groupBy({
-        by: ["categoryId"],
         where: {
           householdId: household.id,
-          date: { gte: start, lt: end },
-          type: "EXPENSE",
+          OR: [{ invoiceId: null, date: yearRange }, { invoice: { dueDate: yearRange } }],
         },
-        _sum: { amount: true },
+        select: {
+          type: true,
+          amount: true,
+          date: true,
+          categoryId: true,
+          invoice: { select: { dueDate: true } },
+        },
       }),
       prisma.finAccount.findMany({
         where: { householdId: household.id, archived: false },
@@ -48,7 +52,7 @@ export async function GET(req: Request) {
     let totalIncome = 0;
     let totalExpense = 0;
     for (const t of allYearTx) {
-      const m = new Date(t.date).getUTCMonth();
+      const m = new Date(t.invoice?.dueDate ?? t.date).getUTCMonth();
       if (t.type === "INCOME") {
         monthly[m].income += t.amount;
         totalIncome += t.amount;
@@ -58,6 +62,16 @@ export async function GET(req: Request) {
       }
     }
     for (const m of monthly) m.net = m.income - m.expense;
+
+    const catTotals = new Map<string | null, number>();
+    for (const t of allYearTx) {
+      if (t.type !== "EXPENSE") continue;
+      catTotals.set(t.categoryId, (catTotals.get(t.categoryId) ?? 0) + t.amount);
+    }
+    const byCategory = Array.from(catTotals, ([categoryId, amount]) => ({
+      categoryId,
+      _sum: { amount },
+    }));
 
     const catIds = byCategory.map((c) => c.categoryId).filter((x): x is string => !!x);
     const cats = catIds.length
