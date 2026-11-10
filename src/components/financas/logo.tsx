@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { useId } from "react";
 
 type Props = {
   /** when true, only the star mark (no wordmark) */
@@ -11,6 +12,8 @@ type Props = {
   subtitle?: boolean;
   /** override the className of the outer element */
   className?: string;
+  /** versão clara, pra usar em cima de fundo escuro fixo (independe do tema) */
+  inverted?: boolean;
 };
 
 const SIZES = {
@@ -28,10 +31,16 @@ const SIZES = {
 export function ArtheaStar({
   size = 28,
   className = "",
+  inverted = false,
 }: {
   size?: number;
   className?: string;
+  inverted?: boolean;
 }) {
+  // id único por instância: com dois logos na página (barra mobile + menu
+  // lateral) e um deles em display:none, um id fixo fazia a estrela visível
+  // apontar pro gradiente do logo escondido e sumir.
+  const gradId = `arthea-star-${useId().replace(/:/g, "")}`;
   return (
     <svg
       viewBox="0 0 100 100"
@@ -42,12 +51,16 @@ export function ArtheaStar({
       aria-hidden
     >
       <defs>
-        <linearGradient id="arthea-star-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="var(--color-brand)" stopOpacity="1" />
-          <stop offset="100%" stopColor="var(--color-brand-dark)" stopOpacity="1" />
+        <linearGradient id={gradId} x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor={inverted ? "#D7F5F0" : "var(--color-brand)"} stopOpacity="1" />
+          <stop
+            offset="100%"
+            stopColor={inverted ? "#5CC4BC" : "var(--color-brand-dark)"}
+            stopOpacity="1"
+          />
         </linearGradient>
       </defs>
-      <g fill="url(#arthea-star-grad)">
+      <g fill={`url(#${gradId})`}>
         {/* 4 long axes (N, E, S, W) — sharp narrow rhombi */}
         <polygon points="50,2 53,50 50,98 47,50" />
         <polygon points="2,50 50,53 98,50 50,47" />
@@ -65,23 +78,28 @@ export function ArtheaLogo({
   href = "/",
   subtitle = true,
   className = "",
+  inverted = false,
 }: Props) {
   const s = SIZES[size];
 
   const content = (
     <span className={`inline-flex items-center gap-2.5 ${className}`}>
-      <ArtheaStar size={s.mark} />
+      <ArtheaStar size={s.mark} inverted={inverted} />
       {!iconOnly && (
         <span className="inline-flex flex-col leading-none">
           <span
-            className={`font-display tracking-[0.18em] uppercase ${s.wordmark} text-foreground`}
+            className={`font-display tracking-[0.18em] uppercase ${s.wordmark} ${
+              inverted ? "text-white" : "text-foreground"
+            }`}
             style={{ fontWeight: 400 }}
           >
             Arthea
           </span>
           {subtitle && (
             <span
-              className={`font-sans tracking-[0.2em] uppercase ${s.subtitle} text-muted-foreground mt-0.5`}
+              className={`font-sans tracking-[0.2em] uppercase ${s.subtitle} ${
+                inverted ? "text-white/60" : "text-muted-foreground"
+              } mt-0.5`}
             >
               Finanças
             </span>

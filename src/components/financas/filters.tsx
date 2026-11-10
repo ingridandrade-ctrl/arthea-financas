@@ -26,7 +26,7 @@ export function FilterGroup({
   className?: string;
 }) {
   return (
-    <div className={`flex flex-col gap-1 ${className}`}>
+    <div className={`flex min-w-0 max-w-full flex-col gap-1 ${className}`}>
       <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
         {label}
       </span>
@@ -45,12 +45,12 @@ export function SegControl<T extends string>({
   options: SegOption<T>[];
 }) {
   return (
-    <div className="inline-flex items-center bg-muted/50 border border-border rounded-lg p-0.5">
+    <div className="no-scrollbar inline-flex max-w-full items-center overflow-x-auto bg-muted/50 border border-border rounded-lg p-0.5">
       {options.map((opt) => (
         <button
           key={opt.value}
           onClick={() => onChange(opt.value)}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+          className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
             value === opt.value
               ? "bg-background text-foreground shadow-sm"
               : "text-muted-foreground hover:text-foreground"

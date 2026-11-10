@@ -23,13 +23,18 @@ export default async function FinancasLayout({
   const isAdmin = !!user?.isAdmin;
 
   return (
-    <div className="flex min-h-screen bg-background text-foreground">
-      <FinancasSidebar isAdmin={isAdmin} />
-      <div className="flex-1 ml-64">
+    <div className="min-h-screen bg-canvas text-foreground">
+      <FinancasSidebar
+        isAdmin={isAdmin}
+        userName={user?.name ?? null}
+        userEmail={user?.email ?? null}
+      />
+      {/* 0.75rem de respiro + 15rem do menu lateral flutuante */}
+      <div className="lg:pl-[15.75rem]">
         {impersonating && user && (
           <ImpersonationBanner asName={user.name} asEmail={user.email} />
         )}
-        <main className="p-6">{children}</main>
+        <main className="mx-auto max-w-[1600px] p-3">{children}</main>
       </div>
     </div>
   );

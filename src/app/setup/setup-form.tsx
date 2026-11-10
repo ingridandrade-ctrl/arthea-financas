@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArtheaLogo } from "@/components/financas/logo";
-import { ThemeToggle } from "@/components/financas/theme-toggle";
+import { AuthShell } from "@/components/financas/auth-shell";
 import { PasswordInput } from "@/components/financas/password-input";
 
 export function SetupForm() {
@@ -41,10 +41,7 @@ export function SetupForm() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-6 relative">
-      <div className="absolute top-6 right-6">
-        <ThemeToggle variant="icon" />
-      </div>
+    <AuthShell>
       <div className="w-full max-w-md bg-card rounded-2xl border border-border p-8 shadow-sm">
         <div className="mb-6">
           <ArtheaLogo size="base" href={null} />
@@ -115,6 +112,6 @@ export function SetupForm() {
           </button>
         </form>
       </div>
-    </div>
+    </AuthShell>
   );
 }

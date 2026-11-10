@@ -52,10 +52,13 @@ export function CategoryDonut({
   data,
   size = 240,
   onSliceClick,
+  compact = false,
 }: {
   data: { name: string; amount: number; color: string }[];
   size?: number;
   onSliceClick?: (entry: any) => void;
+  /** Total do centro em corpo menor, pra caber em roscas abaixo de ~200px. */
+  compact?: boolean;
 }) {
   if (!data.length) return <EmptyChart label="Sem despesas no período" />;
   const total = data.reduce((s, d) => s + d.amount, 0);
@@ -84,7 +87,9 @@ export function CategoryDonut({
       </ResponsiveContainer>
       <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
         <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Total</span>
-        <span className="font-bold text-lg tabular-nums">{formatCurrency(total)}</span>
+        <span className={`font-bold tabular-nums ${compact ? "text-sm" : "text-lg"}`}>
+          {formatCurrency(total)}
+        </span>
       </div>
     </div>
   );
@@ -132,7 +137,8 @@ export function IncomeExpenseLine({
 }: {
   data: { month: string; income: number; expense: number; label?: string }[];
   hideIncome?: boolean;
-  height?: number;
+  /** Número = px fixos; "100%" = preenche o pai (que precisa ter altura definida). */
+  height?: number | "100%";
 }) {
   if (!data.length) return <EmptyChart label="Sem dados" />;
   const items = data.map((d) => ({

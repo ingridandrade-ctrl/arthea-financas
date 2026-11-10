@@ -263,12 +263,11 @@ export function CartoesClient() {
 
   return (
     <div>
-      <div className="flex items-start justify-between flex-wrap gap-3">
-        <PageHeader
-          title="Cartões de Crédito"
-          description="Acompanhe faturas, marque como paga e veja as compras de cada mês."
-        />
-        <div className="flex items-center gap-2 flex-wrap">
+      <PageHeader
+        title="Cartões de Crédito"
+        description="Acompanhe faturas, marque como paga e veja as compras de cada mês."
+        actions={
+          <>
           {projectedCount > 0 && (
             <button
               onClick={cleanupProjected}
@@ -305,8 +304,9 @@ export function CartoesClient() {
               Importar fatura com IA
             </button>
           )}
-        </div>
-      </div>
+          </>
+        }
+      />
 
       {loading ? (
         <p className="text-sm text-muted-foreground">Carregando...</p>
@@ -601,7 +601,8 @@ export function CartoesClient() {
                             </button>
                           </div>
                         )}
-                        <table className="w-full text-sm">
+                        <div className="overflow-x-auto">
+                        <table className="w-full min-w-[40rem] text-sm">
                           <thead className="bg-muted/30 text-muted-foreground text-left">
                             <tr>
                               <th className="px-2 py-2 font-medium w-8">
@@ -687,6 +688,7 @@ export function CartoesClient() {
                             ))}
                           </tbody>
                         </table>
+                        </div>
                       </div>
                       );
                     })()}

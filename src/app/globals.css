@@ -31,6 +31,10 @@
   --color-sidebar: #fafafa;
   --color-popover: #ffffff;
   --color-popover-foreground: #0a0a0a;
+  /* Fundo do app logado: cinza levemente esverdeado onde os cartões brancos
+     "flutuam". Separado de --color-background de propósito — inputs e
+     controles segmentados usam bg-background e precisam continuar brancos. */
+  --color-canvas: #F1F4F4;
 
   /* Partner colors (consistent across charts and avatars) */
   --color-partner-a: #1D7070;
@@ -40,6 +44,9 @@
   --radius: 0.5rem;
   --font-sans: "Inter", system-ui, sans-serif;
   --font-display: "Cormorant Garamond", Georgia, serif;
+  /* Títulos grandes da página inicial e das telas de entrada. A Cormorant
+     fica só no logo: em corpo grande os acentos dela (ê, ú) sobem demais. */
+  --font-headline: "Instrument Serif", "Cormorant Garamond", Georgia, serif;
 }
 
 /* === Dark theme overrides === */
@@ -65,6 +72,7 @@
   --color-sidebar: #0A1212;
   --color-popover: #131F1F;
   --color-popover-foreground: #E6F1F1;
+  --color-canvas: #070E0E;
 
   --color-partner-a: #2BA0A0;
   --color-partner-b: #FB923C;
@@ -79,6 +87,49 @@
   html.dark { color-scheme: dark; }
   html { color-scheme: light; }
 }
+
+/* === Movimento ===
+   Entrada dos cartões em sequência (--i = posição), barras que crescem e a
+   estrela da marca girando devagar. Tudo desligado pra quem pede menos
+   movimento no sistema operacional. */
+@keyframes arthea-rise-in {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: none; }
+}
+.rise-in {
+  animation: arthea-rise-in 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: calc(var(--i, 0) * 70ms);
+}
+@keyframes arthea-grow-x {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
+}
+.grow-x {
+  transform-origin: left center;
+  animation: arthea-grow-x 0.9s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: calc(var(--i, 0) * 70ms + 250ms);
+}
+@keyframes arthea-spin {
+  to { transform: rotate(360deg); }
+}
+.slow-spin { animation: arthea-spin 90s linear infinite; }
+/* Revelar ao rolar (componente Reveal liga .is-visible quando entra na tela). */
+.reveal {
+  opacity: 0;
+  transform: translateY(28px);
+  transition:
+    opacity 0.8s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.8s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.reveal.is-visible { opacity: 1; transform: none; }
+@media (prefers-reduced-motion: reduce) {
+  .rise-in, .grow-x, .slow-spin { animation: none; }
+  .reveal { opacity: 1; transform: none; transition: none; }
+}
+
+/* Carrossel horizontal sem barra de rolagem visível (cartões de crédito). */
+.no-scrollbar { scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
 
 @keyframes arthea-shimmer {
   0%   { background-position: -400px 0; }

@@ -81,19 +81,19 @@ export function CategoriasClient() {
 
   return (
     <div>
-      <div className="flex items-start justify-between flex-wrap gap-3">
-        <PageHeader
-          title="Categorias"
-          description="Organize seus lançamentos para entender para onde o dinheiro vai."
-        />
-        <button
-          onClick={seedDefaults}
-          className="text-xs px-3 py-1.5 rounded-lg border border-border hover:bg-muted text-muted-foreground"
-          title="Cria as categorias padrão que ainda não existem (não duplica as suas)"
-        >
-          Sincronizar categorias padrão
-        </button>
-      </div>
+      <PageHeader
+        title="Categorias"
+        description="Organize seus lançamentos para entender para onde o dinheiro vai."
+        actions={
+          <button
+            onClick={seedDefaults}
+            className="text-xs px-3 py-1.5 rounded-lg border border-border hover:bg-muted text-muted-foreground"
+            title="Cria as categorias padrão que ainda não existem (não duplica as suas)"
+          >
+            Sincronizar categorias padrão
+          </button>
+        }
+      />
 
       {loading ? (
         <p className="text-sm text-muted-foreground">Carregando...</p>

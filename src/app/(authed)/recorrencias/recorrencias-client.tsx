@@ -126,8 +126,8 @@ export function RecorrenciasClient() {
           <p className="text-sm text-muted-foreground">Nenhuma recorrência criada.</p>
         </div>
       ) : (
-        <div className="bg-card border border-border rounded-xl overflow-hidden">
-          <table className="w-full text-sm">
+        <div className="bg-card border border-border rounded-xl overflow-x-auto">
+          <table className="w-full min-w-[52rem] text-sm">
             <thead className="bg-muted/50 text-left text-muted-foreground">
               <tr>
                 <th className="px-4 py-3 font-medium">Nome</th>

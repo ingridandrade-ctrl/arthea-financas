@@ -130,7 +130,10 @@ export function LancamentosClient() {
 
   const [period, setPeriod] = useState<PeriodPreset>("this_month");
   const [from, setFrom] = useState(firstDayOfMonth());
-  const [to, setTo] = useState(todayISO());
+  // Mesmo intervalo do preset "Este mês" (mês inteiro). Antes abria "até
+  // hoje" e as contas pendentes com vencimento mais pra frente só apareciam
+  // depois de clicar num preset.
+  const [to, setTo] = useState(() => presetRange("this_month").to);
   const [accountId, setAccountId] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [owner, setOwner] = useState("");
@@ -154,6 +157,19 @@ export function LancamentosClient() {
     // o "financas"). Prefixar com /financas gera 404.
     router.replace(qs ? `/lancamentos?${qs}` : "/lancamentos");
   }, [type]);
+
+  // /lancamentos?novo=1 (botão "Adicionar" do painel) abre o formulário de
+  // nova movimentação. Espera as contas carregarem — o formulário escolhe a
+  // conta padrão na montagem — e tira o parâmetro pra um F5 não reabrir.
+  const wantsNew = searchParams?.get("novo") === "1";
+  useEffect(() => {
+    if (!wantsNew || accounts.length === 0) return;
+    setCreating(true);
+    const params = new URLSearchParams(searchParams?.toString() ?? "");
+    params.delete("novo");
+    const qs = params.toString();
+    router.replace(qs ? `/lancamentos?${qs}` : "/lancamentos");
+  }, [wantsNew, accounts.length]);
 
   function applyPreset(p: PeriodPreset) {
     setPeriod(p);
@@ -476,7 +492,7 @@ export function LancamentosClient() {
         )}
       </FilterBar>
 
-      <div className={`grid ${hideBalances ? "grid-cols-1" : "grid-cols-3"} gap-3 mb-4`}>
+      <div className={`grid grid-cols-1 ${hideBalances ? "" : "sm:grid-cols-3"} gap-3 mb-4`}>
         {!hideBalances && (
           <SummaryCard label="Receitas" value={totals.income} positive />
         )}
@@ -486,7 +502,7 @@ export function LancamentosClient() {
         )}
       </div>
 
-      <div className="bg-card border border-border rounded-xl overflow-hidden">
+      <div className="bg-card border border-border rounded-xl overflow-x-auto">
         {loading ? (
           <p className="p-6 text-sm text-muted-foreground">Carregando...</p>
         ) : visibleMovements.length === 0 ? (
@@ -494,7 +510,7 @@ export function LancamentosClient() {
             Nenhuma movimentação no período. Clique em "Nova movimentação" para começar.
           </p>
         ) : (
-          <table className="w-full text-sm">
+          <table className="w-full min-w-[46rem] text-sm">
             <thead className="bg-muted/50">
               <tr className="text-left text-muted-foreground">
                 <th className="px-4 py-3 font-medium">Data</th>
@@ -576,7 +592,7 @@ export function LancamentosClient() {
                     {m.type === "EXPENSE" || m.type === "INVOICE" ? "−" : m.type === "INCOME" ? "+" : ""}
                     {formatCurrency(m.amount)}
                   </td>
-                  <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+                  <td className="whitespace-nowrap px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                     {/* Quick-action: marcar pendente/atrasado como pago em 1 clique.
                         Antes só dava clicando na pill de status e escolhendo no menu. */}
                     {(m.status === "pending" || m.status === "overdue") && m.type !== "TRANSFER" && (

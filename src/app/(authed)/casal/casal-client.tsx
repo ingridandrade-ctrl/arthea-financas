@@ -291,7 +291,7 @@ export function CasalClient() {
                 {isSettled ? (
                   <div className="text-center py-2">
                     <CheckCircle2 className="w-10 h-10 text-success mx-auto mb-2" />
-                    <p className="text-xl font-display tracking-tight">Tudo certo!</p>
+                    <p className="text-xl font-semibold tracking-tight">Tudo certo!</p>
                     <p className="text-sm text-muted-foreground mt-1">
                       Ninguém deve nada{filtered ? ` ${periodLabel}` : ""}.
                     </p>
@@ -306,7 +306,7 @@ export function CasalClient() {
                       <ArrowRight className="w-5 h-5 text-muted-foreground" />
                       <span className="text-lg font-medium">{ownerName(creditor)}</span>
                     </div>
-                    <p className="text-4xl font-bold text-primary tabular-nums mb-4 font-display">
+                    <p className="text-4xl font-bold text-primary tabular-nums tracking-tight mb-4">
                       {formatCurrency(owed)}
                     </p>
                     <div className="flex flex-wrap gap-2">

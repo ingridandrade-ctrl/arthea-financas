@@ -67,7 +67,15 @@ export async function GET(req: Request) {
       Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 6, 0, 0, 0, 0)
     );
 
-    const [accounts, balances, allTx, last6Tx] = await Promise.all([
+    // Faturas dos cartões no mês selecionado e nos 2 seguintes (cartão
+    // "Cartões" do painel). Não passa pelo filtro de dono: a fatura é do
+    // cartão inteiro, não de quem fez cada compra.
+    const invoiceWindow = [0, 1, 2].map((i) => {
+      const d = new Date(Date.UTC(year, month + i, 1));
+      return { year: d.getUTCFullYear(), month: d.getUTCMonth() };
+    });
+
+    const [accounts, balances, allTx, last6Tx, windowInvoices] = await Promise.all([
       prisma.finAccount.findMany({
         where: { householdId: household.id, archived: false },
         orderBy: { createdAt: "asc" },
@@ -92,7 +100,49 @@ export async function GET(req: Request) {
           invoice: { select: { dueDate: true } },
         },
       }),
+      prisma.finCreditCardInvoice.findMany({
+        where: { householdId: household.id, OR: invoiceWindow },
+        select: {
+          id: true,
+          accountId: true,
+          year: true,
+          month: true,
+          dueDate: true,
+          closingDate: true,
+          status: true,
+        },
+      }),
     ]);
+
+    const invoiceSums = windowInvoices.length
+      ? await prisma.finTransaction.groupBy({
+          by: ["invoiceId"],
+          where: {
+            householdId: household.id,
+            invoiceId: { in: windowInvoices.map((i) => i.id) },
+          },
+          _sum: { amount: true },
+        })
+      : [];
+    const invoiceTotalById = new Map(invoiceSums.map((s) => [s.invoiceId, s._sum.amount ?? 0]));
+    const cardInvoices = windowInvoices.map((inv) => {
+      // Mesma regra de /api/invoices: o status gravado só distingue paga de
+      // não paga; fechada/atrasada saem das datas.
+      let status: "OPEN" | "CLOSED" | "PAID" | "OVERDUE" = inv.status;
+      if (status !== "PAID") {
+        if (inv.closingDate <= now && status === "OPEN") status = "CLOSED";
+        if (inv.dueDate < now) status = "OVERDUE";
+      }
+      return {
+        id: inv.id,
+        accountId: inv.accountId,
+        year: inv.year,
+        month: inv.month,
+        dueDate: inv.dueDate,
+        status,
+        total: invoiceTotalById.get(inv.id) ?? 0,
+      };
+    });
 
     function effectiveDate(tx: {
       date: Date;
@@ -240,6 +290,7 @@ export async function GET(req: Request) {
       expensesByCategory,
       byOwner: ownerSummary,
       monthlySeries,
+      cardInvoices,
       filters: { cardGrouping, owner: ownerFilter || "all" },
     });
   } catch (e) {
