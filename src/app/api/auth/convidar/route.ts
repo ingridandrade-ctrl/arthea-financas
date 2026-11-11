@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { randomBytes } from "crypto";
 import { prisma } from "@/lib/prisma";
-import { requireUser, HouseholdAuthError } from "@/lib/financas/session";
+import {
+  requireUser,
+  getSessionFromCookies,
+  HouseholdAuthError,
+} from "@/lib/financas/session";
 
 /**
  * Cria um convite pra alguém entrar no Household atual como membro.
@@ -22,7 +26,11 @@ export async function POST(req: Request) {
     if (user.memberships.length === 0) {
       return NextResponse.json({ error: "Você não tem casa ativa" }, { status: 400 });
     }
-    const membership = user.memberships[0];
+    // A casa aberta nesta sessão — senão quem pertence a duas convidava
+    // pra casa errada.
+    const hid = getSessionFromCookies()?.hid;
+    const membership =
+      user.memberships.find((m) => m.householdId === hid) ?? user.memberships[0];
     if (membership.role !== "OWNER") {
       return NextResponse.json(
         { error: "Só o dono da casa pode convidar membros" },

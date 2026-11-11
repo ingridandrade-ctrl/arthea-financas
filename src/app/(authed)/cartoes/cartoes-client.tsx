@@ -7,7 +7,9 @@ import { CreditCard, CheckCircle2, Clock, AlertTriangle, Lock, Sparkles, Trash2,
 import { Modal } from "@/components/ui/modal";
 import { PageHeader } from "@/components/financas/page-header";
 import { PasswordInput } from "@/components/financas/password-input";
-import { formatCurrency } from "@/lib/utils";
+import { capFirst, formatCurrency } from "@/lib/utils";
+import { PageSkeleton } from "@/components/financas/page-skeleton";
+import { todayISO } from "@/lib/financas/local-date";
 
 type Account = {
   id: string;
@@ -309,7 +311,7 @@ export function CartoesClient() {
       />
 
       {loading ? (
-        <p className="text-sm text-muted-foreground">Carregando...</p>
+        <PageSkeleton />
       ) : cards.length === 0 ? (
         <div className="text-center py-12 bg-card border border-border rounded-xl">
           <CreditCard className="w-10 h-10 mx-auto text-muted-foreground mb-3" />
@@ -411,11 +413,13 @@ export function CartoesClient() {
                     <div className="p-5 flex items-start justify-between flex-wrap gap-4">
                       <div>
                         <div className="flex items-center gap-2 mb-1">
-                          <h3 className="text-lg font-semibold capitalize">
-                            {new Date(inv.dueDate).toLocaleDateString("pt-BR", {
-                              month: "long",
-                              year: "numeric",
-                            })}
+                          <h3 className="text-lg font-semibold">
+                            {capFirst(
+                              new Date(inv.dueDate).toLocaleDateString("pt-BR", {
+                                month: "long",
+                                year: "numeric",
+                              })
+                            )}
                           </h3>
                           <span
                             className={`inline-flex items-center ${STATUS_COLOR[inv.status]}`}
@@ -879,7 +883,7 @@ function MoveInvoiceModal({
           </span>
         </label>
         {error && <p className="text-sm text-destructive">{error}</p>}
-        <div className="flex justify-end gap-2 pt-2">
+        <div className="modal-actions">
           <button
             type="button"
             onClick={onClose}
@@ -911,7 +915,7 @@ function BulkDateModal({
 }) {
   const defaultDate = invoice.dueDate
     ? new Date(invoice.dueDate).toISOString().slice(0, 10)
-    : new Date().toISOString().slice(0, 10);
+    : todayISO();
   const [date, setDate] = useState(defaultDate);
   const [overwritePurchaseDates, setOverwritePurchaseDates] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -978,7 +982,7 @@ function BulkDateModal({
         {error && (
           <div className="text-sm text-destructive bg-destructive/10 p-2 rounded-lg">{error}</div>
         )}
-        <div className="flex justify-end gap-2 pt-2">
+        <div className="modal-actions">
           <button
             type="button"
             onClick={onClose}
@@ -1199,7 +1203,7 @@ function PayInvoiceModal({
   const [paidBy, setPaidBy] = useState<"PARTNER_A" | "PARTNER_B" | "COUPLE">(
     inferOwner(accounts[0]?.id || "")
   );
-  const [paidAt, setPaidAt] = useState(new Date().toISOString().slice(0, 10));
+  const [paidAt, setPaidAt] = useState(todayISO());
   const [skipTransfer, setSkipTransfer] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -1325,7 +1329,7 @@ function PayInvoiceModal({
           />
         </div>
         {error && <div className="text-sm text-destructive bg-destructive/10 p-2 rounded-lg">{error}</div>}
-        <div className="flex justify-end gap-2 pt-2">
+        <div className="modal-actions">
           <button type="button" onClick={onClose} className="px-4 py-2 rounded-lg border border-border hover:bg-muted">
             Cancelar
           </button>
@@ -1686,7 +1690,7 @@ function ImportInvoiceModal({
     const m = invoiceMonth.match(/^(\d{4})-(\d{2})$/);
     const defaultDate = m
       ? `${m[1]}-${m[2]}-01`
-      : new Date().toISOString().slice(0, 10);
+      : todayISO();
     setRows((rs) => [
       ...rs,
       {
@@ -1858,7 +1862,7 @@ function ImportInvoiceModal({
           {error && (
             <div className="text-sm text-destructive bg-destructive/10 p-2 rounded-lg">{error}</div>
           )}
-          <div className="flex justify-end gap-2 pt-2">
+          <div className="modal-actions">
             <button
               type="button"
               onClick={onClose}
@@ -2437,7 +2441,7 @@ function ImportInvoiceModal({
           {error && (
             <div className="text-sm text-destructive bg-destructive/10 p-2 rounded-lg">{error}</div>
           )}
-          <div className="flex justify-end gap-2 pt-2">
+          <div className="modal-actions">
             <button
               type="button"
               onClick={onClose}

@@ -7,6 +7,7 @@ import { Plus, Pencil, Trash2, PiggyBank, Target, Archive, ArchiveRestore } from
 import { Modal } from "@/components/ui/modal";
 import { PageHeader } from "@/components/financas/page-header";
 import { formatCurrency } from "@/lib/utils";
+import { PageSkeleton } from "@/components/financas/page-skeleton";
 
 type Goal = {
   id: string;
@@ -80,7 +81,7 @@ export function MetasClient() {
       />
 
       {loading ? (
-        <p className="text-sm text-muted-foreground">Carregando...</p>
+        <PageSkeleton variant="cards" rows={3} />
       ) : active.length === 0 ? (
         <div className="text-center py-12 bg-card border border-border rounded-xl">
           <Target className="w-10 h-10 mx-auto text-muted-foreground mb-3" />
@@ -346,7 +347,7 @@ function GoalModal({
           />
         </div>
         {error && <div className="text-sm text-destructive bg-destructive/10 p-2 rounded-lg">{error}</div>}
-        <div className="flex justify-end gap-2 pt-2">
+        <div className="modal-actions">
           <button type="button" onClick={onClose} className="px-4 py-2 rounded-lg border border-border hover:bg-muted">
             Cancelar
           </button>
@@ -458,7 +459,7 @@ function ContributeModal({
           </div>
         )}
         {error && <div className="text-sm text-destructive bg-destructive/10 p-2 rounded-lg">{error}</div>}
-        <div className="flex justify-end gap-2 pt-2">
+        <div className="modal-actions">
           <button type="button" onClick={onClose} className="px-4 py-2 rounded-lg border border-border hover:bg-muted">
             Cancelar
           </button>

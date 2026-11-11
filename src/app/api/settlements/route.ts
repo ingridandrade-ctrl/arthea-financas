@@ -13,7 +13,8 @@ export async function GET(req: Request) {
     const from = fromStr ? parseLocalDate(fromStr) : undefined;
     const to = toStr ? parseLocalDateEnd(toStr) : undefined;
 
-    const [settlements, balance] = await Promise.all([
+    const hasPeriod = !!(from || to);
+    const [settlements, open, period] = await Promise.all([
       prisma.finSettlement.findMany({
         where: {
           householdId: household.id,
@@ -27,9 +28,24 @@ export async function GET(req: Request) {
         },
         orderBy: [{ date: "desc" }, { createdAt: "desc" }],
       }),
-      computeCoupleBalance(household.id, from, to),
+      // Saldo em aberto = histórico inteiro. É o "quem deve a quem agora":
+      // um Pix de dezembro quita uma dívida de novembro, coisa que o saldo
+      // de um mês só nunca enxerga.
+      computeCoupleBalance(household.id),
+      hasPeriod ? computeCoupleBalance(household.id, from, to) : null,
     ]);
-    return NextResponse.json({ settlements, balance });
+    return NextResponse.json({
+      settlements,
+      // Recorte do período pedido (listas de origem, totais do período).
+      balance: period ?? open,
+      // Sem as listas de origem: no histórico inteiro elas só crescem.
+      openBalance: {
+        netBalance: open.netBalance,
+        whoOwes: open.whoOwes,
+        amount: open.amount,
+        details: open.details,
+      },
+    });
   } catch (e) {
     if (e instanceof HouseholdAuthError) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
     throw e;

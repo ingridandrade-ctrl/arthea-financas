@@ -87,7 +87,7 @@ export async function POST(req: Request) {
       },
     });
 
-    const generated = await runRecurringForHousehold(household.id);
+    const generated = await runRecurringForHousehold(household.id, { backfillRuleId: rule.id });
 
     return NextResponse.json({ ...rule, generated: generated.created }, { status: 201 });
   } catch (e) {

@@ -6,6 +6,7 @@ import { Users, Home, Receipt, Wallet, CreditCard, Search, ExternalLink, Crown }
 import { toast } from "@/components/financas/toaster";
 import { confirmDialog } from "@/components/ui/confirm-dialog";
 import { PageHeader } from "@/components/financas/page-header";
+import { PageSkeleton } from "@/components/financas/page-skeleton";
 
 type Stats = {
   counts: {
@@ -147,7 +148,7 @@ export function AdminClient() {
           </div>
         </div>
         {users === null ? (
-          <p className="p-6 text-sm text-muted-foreground">Carregando...</p>
+          <PageSkeleton variant="rows" className="p-4" />
         ) : users.length === 0 ? (
           <p className="p-6 text-sm text-muted-foreground text-center">Nenhum usuário encontrado.</p>
         ) : (

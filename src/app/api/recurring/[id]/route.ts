@@ -50,6 +50,19 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
         data,
       });
 
+      // "Aplicar ao que já foi gerado" vale só pro que ainda está em aberto:
+      // conta não paga, ou compra numa fatura que ainda não foi paga. O que já
+      // foi pago é história — mudar o valor da regra hoje não pode reescrever
+      // o aluguel de seis meses atrás.
+      const openTxWhere = {
+        householdId: household.id,
+        recurringId: params.id,
+        OR: [
+          { invoiceId: null, paid: false },
+          { invoice: { status: { not: "PAID" as const } } },
+        ],
+      };
+
       let updatedTxs = 0;
       if (applyToExisting) {
         const txData: any = {};
@@ -62,7 +75,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 
         if (Object.keys(txData).length > 0) {
           const res = await tx.finTransaction.updateMany({
-            where: { householdId: household.id, recurringId: params.id },
+            where: openTxWhere,
             data: txData,
           });
           updatedTxs = res.count;
@@ -79,12 +92,12 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
           });
           if (newAccount && newAccount.type !== "CREDIT_CARD") {
             await tx.finTransaction.updateMany({
-              where: { householdId: household.id, recurringId: params.id },
+              where: openTxWhere,
               data: { invoiceId: null },
             });
           } else if (newAccount && newAccount.type === "CREDIT_CARD") {
             const linkedTxs = await tx.finTransaction.findMany({
-              where: { householdId: household.id, recurringId: params.id },
+              where: openTxWhere,
               select: { id: true, date: true },
             });
             for (const lt of linkedTxs) {

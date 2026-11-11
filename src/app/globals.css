@@ -155,3 +155,28 @@
   );
   background-size: 800px 100%;
 }
+
+/* Rodapé de ações dos formulários em modal. Quando o formulário é mais alto
+   que a tela, o rodapé gruda no fundo do modal em vez de ficar escondido lá
+   embaixo — "Salvar" sempre à vista. A margem negativa cobre o p-6 do modal,
+   e o degradê acima avisa que tem mais conteúdo passando por baixo. */
+.modal-actions {
+  position: sticky;
+  /* o "fundo" do sticky é a borda interna do padding do modal (p-6) */
+  bottom: -1.5rem;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-bottom: -1.5rem;
+  padding: 0.75rem 0 1.5rem;
+  background: var(--color-card);
+}
+.modal-actions::before {
+  content: "";
+  position: absolute;
+  inset: -1rem 0 100% 0;
+  background: linear-gradient(to top, var(--color-card), transparent);
+  pointer-events: none;
+}

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireHousehold, HouseholdAuthError } from "@/lib/financas/session";
+import { startOfTodayBR } from "@/lib/financas/dates";
 
 export async function GET(req: Request) {
   try {
@@ -35,12 +36,15 @@ export async function GET(req: Request) {
       },
     });
 
-    const today = new Date();
+    // "Hoje" de Brasília, em dia inteiro: a fatura fecha quando o dia do
+    // fechamento termina e só fica atrasada no dia seguinte ao vencimento.
+    // Com `new Date()` cru ela aparecia "atrasada" já na manhã do vencimento.
+    const today = startOfTodayBR();
     const enriched = invoices.map((inv) => {
       const total = inv.transactions.reduce((s, t) => s + t.amount, 0);
       let status: "OPEN" | "CLOSED" | "PAID" | "OVERDUE" = inv.status;
       if (status !== "PAID") {
-        if (inv.closingDate <= today && status === "OPEN") status = "CLOSED";
+        if (inv.closingDate < today && status === "OPEN") status = "CLOSED";
         if (inv.dueDate < today) status = "OVERDUE";
       }
       return { ...inv, total, status };

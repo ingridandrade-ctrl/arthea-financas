@@ -20,8 +20,10 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
     const target = await prisma.user.findUnique({
       where: { id: params.id },
       include: {
+        // Mesma casa que o login abre (a mais recente), pra admin ver o que
+        // a pessoa vê.
         memberships: {
-          orderBy: { createdAt: "asc" },
+          orderBy: { createdAt: "desc" },
           take: 1,
         },
       },

@@ -17,6 +17,7 @@ import {
   SearchInput,
 } from "@/components/financas/filters";
 import { formatCurrency } from "@/lib/utils";
+import { PageSkeleton } from "@/components/financas/page-skeleton";
 
 type PeriodPreset = "this_month" | "last_month" | "last_3" | "year" | "all" | "custom";
 
@@ -103,6 +104,15 @@ type Movement = {
 };
 
 type TxStatus = "paid" | "pending" | "overdue";
+
+const PAGE_SIZE = 200;
+/** Teto de linhas na tela (o servidor não devolve mais que isso). */
+const MAX_ROWS = 2000;
+type MovementsSummary = {
+  totalCount: number;
+  counts: { INCOME: number; EXPENSE: number; TRANSFER: number; INVOICE: number };
+  totals: { income: number; expense: number };
+};
 type Settings = { partnerAName: string; partnerBName: string; currency: string };
 
 function todayISO() {
@@ -140,6 +150,12 @@ export function LancamentosClient() {
   const [type, setType] = useState(searchParams?.get("type") ?? "");
   const [status, setStatus] = useState<"" | TxStatus>("");
   const [q, setQ] = useState("");
+  // A lista vem em páginas; os totais e a contagem vêm do servidor e valem
+  // pro filtro inteiro, não só pras linhas que já estão na tela.
+  const [limit, setLimit] = useState(PAGE_SIZE);
+  const [summary, setSummary] = useState<MovementsSummary | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const requestSeq = useRef(0);
 
   useEffect(() => {
     const urlType = searchParams?.get("type") ?? "";
@@ -255,7 +271,10 @@ export function LancamentosClient() {
   }
 
   async function loadTx() {
-    setLoading(true);
+    const seq = ++requestSeq.current;
+    // "Mostrar mais" mantém a tabela na tela enquanto busca o resto.
+    if (limit === PAGE_SIZE) setLoading(true);
+    else setLoadingMore(true);
     const params = new URLSearchParams();
     if (from) params.set("from", from);
     if (to) params.set("to", to + "T23:59:59");
@@ -265,23 +284,52 @@ export function LancamentosClient() {
     if (type) params.set("type", type);
     if (status) params.set("status", status);
     if (q) params.set("q", q);
-    const res = await fetch(`/api/movements?${params.toString()}`);
-    const data = await res.json();
-    setMovements(Array.isArray(data) ? data : []);
-    setLoading(false);
+    params.set("summary", "1");
+    params.set("limit", String(limit));
+    try {
+      const res = await fetch(`/api/movements?${params.toString()}`);
+      const data = await res.json();
+      // Trocar de filtro rápido dispara várias buscas; só a última vale.
+      if (seq !== requestSeq.current) return;
+      if (res.ok && data && Array.isArray(data.rows)) {
+        setMovements(data.rows);
+        setSummary({ totalCount: data.totalCount, counts: data.counts, totals: data.totals });
+      } else {
+        setMovements(Array.isArray(data) ? data : []);
+        setSummary(null);
+      }
+    } catch {
+      if (seq !== requestSeq.current) return;
+      toast.error("Não deu pra carregar as movimentações. Confira a conexão e tente de novo.");
+    } finally {
+      if (seq === requestSeq.current) {
+        setLoading(false);
+        setLoadingMore(false);
+      }
+    }
   }
+  // O "voltei pra aba" precisa recarregar com os filtros de AGORA. Preso na
+  // função do primeiro render, ele recarregava com o filtro inicial e a lista
+  // deixava de bater com o que estava selecionado.
+  const loadTxRef = useRef(loadTx);
+  loadTxRef.current = loadTx;
 
   useEffect(() => {
     loadStatic();
   }, []);
 
+  // Mudou o filtro: volta pra primeira página.
   useEffect(() => {
-    loadTx();
+    setLimit(PAGE_SIZE);
   }, [from, to, accountId, categoryId, owner, type, status, q]);
 
   useEffect(() => {
+    loadTx();
+  }, [from, to, accountId, categoryId, owner, type, status, q, limit]);
+
+  useEffect(() => {
     function onFocus() {
-      loadTx();
+      loadTxRef.current();
       loadStatic();
     }
     window.addEventListener("focus", onFocus);
@@ -300,6 +348,11 @@ export function LancamentosClient() {
   }, [movements, hideBalances]);
 
   const totals = useMemo(() => {
+    // Totais do servidor = filtro inteiro. O cálculo local fica só de reserva.
+    if (summary) {
+      const { income, expense } = summary.totals;
+      return { income, expense, net: income - expense };
+    }
     let income = 0;
     let expense = 0;
     for (const m of visibleMovements) {
@@ -307,7 +360,16 @@ export function LancamentosClient() {
       else if (m.type === "EXPENSE" || m.type === "INVOICE") expense += m.amount;
     }
     return { income, expense, net: income - expense };
-  }, [visibleMovements]);
+  }, [visibleMovements, summary]);
+
+  // Quantas movimentações o filtro tem ao todo (no modo "ocultar saldos" as
+  // receitas e transferências não contam, porque não aparecem).
+  const totalVisible = summary
+    ? hideBalances
+      ? summary.counts.EXPENSE + summary.counts.INVOICE
+      : summary.totalCount
+    : visibleMovements.length;
+  const hasMore = !!summary && summary.totalCount > movements.length;
 
   const ownerLabel = (o: string) => {
     if (!settings) return o;
@@ -504,7 +566,7 @@ export function LancamentosClient() {
 
       <div className="bg-card border border-border rounded-xl overflow-x-auto">
         {loading ? (
-          <p className="p-6 text-sm text-muted-foreground">Carregando...</p>
+          <PageSkeleton variant="rows" rows={8} className="p-4" />
         ) : visibleMovements.length === 0 ? (
           <p className="p-12 text-sm text-muted-foreground text-center">
             Nenhuma movimentação no período. Clique em "Nova movimentação" para começar.
@@ -639,6 +701,26 @@ export function LancamentosClient() {
             </tbody>
           </table>
         )}
+        {!loading && hasMore && (
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-4 py-3 text-xs text-muted-foreground">
+            <span>
+              Mostrando as {visibleMovements.length.toLocaleString("pt-BR")} mais recentes de{" "}
+              {totalVisible.toLocaleString("pt-BR")} movimentações. Os totais acima já somam todas.
+            </span>
+            {limit < MAX_ROWS ? (
+              <button
+                type="button"
+                onClick={() => setLimit((l) => Math.min(l + PAGE_SIZE, MAX_ROWS))}
+                disabled={loadingMore}
+                className="rounded-lg border border-border px-3 py-1.5 font-medium text-foreground hover:bg-muted disabled:opacity-50"
+              >
+                {loadingMore ? "Carregando…" : "Mostrar mais"}
+              </button>
+            ) : (
+              <span>Use os filtros ou exporte o CSV pra ver o resto.</span>
+            )}
+          </div>
+        )}
       </div>
 
       {creating && (
@@ -735,7 +817,7 @@ function InvoiceTxModal({
   return (
     <Modal title={`Fatura · ${title}`} onClose={onClose} maxWidth="max-w-2xl">
       {!txs ? (
-        <p className="text-sm text-muted-foreground">Carregando...</p>
+        <PageSkeleton variant="rows" rows={5} />
       ) : txs.length === 0 ? (
         <p className="text-sm text-muted-foreground">Nenhuma compra nesta fatura.</p>
       ) : (
@@ -1341,7 +1423,7 @@ function TransactionModal({
           </div>
         )}
 
-        <div className="flex justify-end gap-2 pt-2">
+        <div className="modal-actions">
           <button
             type="button"
             onClick={onClose}

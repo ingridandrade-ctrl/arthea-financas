@@ -6,6 +6,7 @@ import {
 } from "@/lib/financas/session";
 import { FinancasSidebar } from "@/components/financas/sidebar";
 import { ImpersonationBanner } from "@/components/financas/impersonation-banner";
+import { runRecurringForHousehold } from "@/lib/financas/recurring";
 
 export default async function FinancasLayout({
   children,
@@ -16,6 +17,15 @@ export default async function FinancasLayout({
 
   if (!session) {
     redirect("/");
+  }
+
+  // Recorrências: as contas do mês nascem sozinhas quando alguém abre o
+  // sistema, antes de qualquer tela buscar dados. Se der erro aqui, o app
+  // abre do mesmo jeito — só não gera nada desta vez.
+  try {
+    await runRecurringForHousehold(session.hid);
+  } catch (err) {
+    console.error("[recorrencias] geração automática falhou", err);
   }
 
   const user = await getCurrentUser();

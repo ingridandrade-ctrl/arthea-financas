@@ -5,6 +5,7 @@ import { ChevronLeft, ChevronRight, Download, BarChart3, TrendingUp, TrendingDow
 import { PageHeader } from "@/components/financas/page-header";
 import { formatCurrency } from "@/lib/utils";
 import { IncomeExpenseLine, CategoryDonut } from "@/components/financas/charts";
+import { PageSkeleton } from "@/components/financas/page-skeleton";
 
 type Report = {
   year: number;
@@ -47,7 +48,8 @@ export function RelatoriosClient() {
   if (loading || !data) {
     return (
       <div>
-        <PageHeader title="Relatórios" description="Carregando..." />
+        <PageHeader title="Relatórios" description="Visão anual: receitas, despesas, evolução das contas e categorias." />
+        <PageSkeleton />
       </div>
     );
   }

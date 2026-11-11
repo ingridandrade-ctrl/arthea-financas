@@ -103,7 +103,10 @@ export function PorPessoaClient() {
       />
 
       {loading || !data ? (
-        <p className="text-sm text-muted-foreground">Carregando...</p>
+        <div className="grid gap-4 md:grid-cols-2" role="status" aria-label="Carregando">
+          <div className="skeleton h-72 !rounded-2xl" />
+          <div className="skeleton h-72 !rounded-2xl" />
+        </div>
       ) : (
         <>
           <div className="grid md:grid-cols-2 gap-4 mb-4">
@@ -111,13 +114,13 @@ export function PorPessoaClient() {
               name={data.partnerAName}
               person={data.partnerA}
               groupBy={groupBy}
-              accentColor="var(--color-primary)"
+              accentColor="var(--color-partner-a)"
             />
             <PersonCard
               name={data.partnerBName}
               person={data.partnerB}
               groupBy={groupBy}
-              accentColor="#0ea5e9"
+              accentColor="var(--color-partner-b)"
             />
           </div>
 
@@ -162,6 +165,9 @@ export function PorPessoaClient() {
   );
 }
 
+/** Fatia "do casal" nas barras: a cor do casal, mais suave que a da pessoa. */
+const COUPLE_SHARE = "color-mix(in srgb, var(--color-couple) 55%, transparent)";
+
 function ComparisonChart({
   data,
   groupBy,
@@ -205,8 +211,8 @@ function ComparisonChart({
     <GroupedBars
       data={top}
       series={[
-        { key: data.partnerAName, name: data.partnerAName, color: "var(--color-primary)" },
-        { key: data.partnerBName, name: data.partnerBName, color: "#94a3b8" },
+        { key: data.partnerAName, name: data.partnerAName, color: "var(--color-partner-a)" },
+        { key: data.partnerBName, name: data.partnerBName, color: "var(--color-partner-b)" },
       ]}
       layout="horizontal"
       height={Math.max(220, top.length * 36 + 60)}
@@ -233,12 +239,16 @@ function PersonCard({
     <div className="bg-card border border-border rounded-xl overflow-hidden">
       <div
         className="p-6 border-b border-border"
-        style={{ background: `linear-gradient(135deg, ${accentColor}15 0%, transparent 60%)` }}
+        style={{
+          // color-mix em vez de colar "15" no fim da cor: com var(--color-…)
+          // o hex+alpha virava CSS inválido e o degradê nem aparecia.
+          background: `linear-gradient(135deg, color-mix(in srgb, ${accentColor} 9%, transparent) 0%, transparent 60%)`,
+        }}
       >
         <div className="flex items-center gap-3 mb-3">
           <div
             className="w-11 h-11 rounded-xl flex items-center justify-center"
-            style={{ backgroundColor: `${accentColor}25` }}
+            style={{ backgroundColor: `color-mix(in srgb, ${accentColor} 15%, transparent)` }}
           >
             <User className="w-6 h-6" style={{ color: accentColor }} />
           </div>
@@ -251,10 +261,10 @@ function PersonCard({
           <div className="mt-5 space-y-2">
             <div className="flex h-2.5 rounded-full overflow-hidden bg-muted">
               <div style={{ width: `${ownPct}%`, backgroundColor: accentColor }} />
-              <div style={{ width: `${couplePct}%`, backgroundColor: "#cbd5e1" }} />
+              <div style={{ width: `${couplePct}%`, backgroundColor: COUPLE_SHARE }} />
             </div>
-            <div className="flex items-center justify-between text-xs">
-              <span className="inline-flex items-center gap-1.5">
+            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs">
+              <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
                 <span className="w-2 h-2 rounded-full" style={{ backgroundColor: accentColor }} />
                 <span className="text-muted-foreground">Próprios</span>
                 <span className="font-semibold tabular-nums">
@@ -262,9 +272,9 @@ function PersonCard({
                 </span>
                 <span className="text-muted-foreground">({ownPct.toFixed(0)}%)</span>
               </span>
-              <span className="inline-flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: "#cbd5e1" }} />
-                <span className="text-muted-foreground">Sua parte do casal</span>
+              <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: COUPLE_SHARE }} />
+                <span className="text-muted-foreground">Parte do casal</span>
                 <span className="font-semibold tabular-nums">
                   {formatCurrency(person.couple.total)}
                 </span>
@@ -355,7 +365,7 @@ function CombinedSection({
             </div>
             <div className="flex h-1.5 rounded-full bg-muted overflow-hidden">
               <div style={{ width: `${ownPct}%`, backgroundColor: accentColor }} />
-              <div style={{ width: `${couplePct}%`, backgroundColor: "#cbd5e1" }} />
+              <div style={{ width: `${couplePct}%`, backgroundColor: COUPLE_SHARE }} />
             </div>
             {(r.own > 0 || r.couple > 0) && (
               <div className="flex justify-between text-[10px] text-muted-foreground mt-0.5 tabular-nums">

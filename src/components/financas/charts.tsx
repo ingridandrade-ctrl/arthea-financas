@@ -48,20 +48,27 @@ function CurrencyTooltip({ active, payload, label }: any) {
   );
 }
 
+/** Raio interno da rosca, como fração do raio total. */
+const INNER_RADIUS = 0.62;
+
 export function CategoryDonut({
   data,
   size = 240,
   onSliceClick,
-  compact = false,
 }: {
   data: { name: string; amount: number; color: string }[];
   size?: number;
   onSliceClick?: (entry: any) => void;
-  /** Total do centro em corpo menor, pra caber em roscas abaixo de ~200px. */
-  compact?: boolean;
 }) {
   if (!data.length) return <EmptyChart label="Sem despesas no período" />;
   const total = data.reduce((s, d) => s + d.amount, 0);
+  const label = formatCurrency(total);
+  // O total mora dentro do furo da rosca. O corpo da letra sai do espaço que
+  // sobra ali (furo = 62% da altura) e do tamanho do número — "R$ 1.234,56"
+  // e "R$ 123.456,78" não cabem no mesmo corpo. Antes era fixo e o valor
+  // passava por cima do anel nas roscas de 220px.
+  const hole = size * INNER_RADIUS - 20;
+  const fontSize = Math.max(11, Math.min(20, Math.floor(hole / (label.length * 0.6))));
   return (
     <div className="relative" style={{ width: "100%", height: size }}>
       <ResponsiveContainer>
@@ -72,8 +79,8 @@ export function CategoryDonut({
             nameKey="name"
             cx="50%"
             cy="50%"
-            innerRadius="55%"
-            outerRadius="85%"
+            innerRadius={`${INNER_RADIUS * 100}%`}
+            outerRadius="90%"
             paddingAngle={2}
             onClick={onSliceClick}
             cursor={onSliceClick ? "pointer" : undefined}
@@ -87,8 +94,8 @@ export function CategoryDonut({
       </ResponsiveContainer>
       <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
         <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Total</span>
-        <span className={`font-bold tabular-nums ${compact ? "text-sm" : "text-lg"}`}>
-          {formatCurrency(total)}
+        <span className="font-bold tabular-nums leading-tight" style={{ fontSize }}>
+          {label}
         </span>
       </div>
     </div>

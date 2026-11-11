@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { todayBRString } from "./dates";
 
 // As rotas de parse têm maxDuration = 60s na Vercel. O default do SDK
 // (10 min + 2 retries) deixava a função ser morta pela Vercel antes de a
@@ -71,7 +72,7 @@ export async function parseInvoiceText(
   const { cardName, partnerAName, partnerBName, categories, hints = [] } = ctx;
 
   const categoryList = categories.map((c) => `- ${c.id} | ${c.name}`).join("\n");
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayBRString();
 
   // Só categoria. O dono é decidido no servidor (import-history) a partir do
   // histórico real do casal — pedir pra IA "preferir o dono usado antes"

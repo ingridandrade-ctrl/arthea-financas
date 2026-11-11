@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { ArtheaLogo } from "@/components/financas/logo";
 import { ThemeToggle } from "@/components/financas/theme-toggle";
@@ -89,8 +89,10 @@ function buildHref(href: string, query?: Record<string, string>) {
   return `${href}?${qs}`;
 }
 
+// Em telas baixas (notebook de 768px de altura) os itens ficam um pouco mais
+// justos, pra caber o menu inteiro sem rolagem.
 const ITEM_BASE =
-  "flex items-center gap-2.5 rounded-xl px-3 py-2 text-[13px] font-medium transition-colors";
+  "flex items-center gap-2.5 rounded-xl px-3 py-2 text-[13px] font-medium transition-colors [@media(max-height:820px)]:py-1.5";
 const ITEM_IDLE = "text-muted-foreground hover:bg-muted/70 hover:text-foreground";
 const ITEM_ACTIVE = "bg-muted text-foreground";
 
@@ -107,9 +109,12 @@ export function FinancasSidebar({
   const searchParams = useSearchParams();
   const router = useRouter();
   const [hideBalances, setHideBalances] = useState(false);
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({
-    "/lancamentos": true,
-  });
+  // Os atalhos de Movimentações abrem sozinhos quando a pessoa está nessa
+  // tela. Fora dela, só ficam abertos de saída se a tela for alta o bastante
+  // pra não empurrar Cadastro e Ajustes pra fora da vista.
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const navRef = useRef<HTMLElement>(null);
+  const [moreBelow, setMoreBelow] = useState(false);
   // Abaixo de lg o menu vira uma gaveta; acima fica sempre visível.
   const [open, setOpen] = useState(false);
   const currentType = searchParams?.get("type") ?? "";
@@ -122,6 +127,31 @@ export function FinancasSidebar({
       })
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (window.innerHeight >= 960) {
+      setExpanded((prev) => ({ "/lancamentos": true, ...prev }));
+    }
+  }, []);
+
+  // Sombra no pé do menu quando ainda tem item escondido abaixo: sem ela, em
+  // tela baixa, nada indicava que dava pra rolar.
+  useEffect(() => {
+    const nav = navRef.current;
+    if (!nav) return;
+    const check = () =>
+      setMoreBelow(nav.scrollHeight - nav.scrollTop - nav.clientHeight > 8);
+    check();
+    nav.addEventListener("scroll", check, { passive: true });
+    window.addEventListener("resize", check);
+    const observer = new ResizeObserver(check);
+    observer.observe(nav);
+    return () => {
+      nav.removeEventListener("scroll", check);
+      window.removeEventListener("resize", check);
+      observer.disconnect();
+    };
+  }, [expanded, hideBalances, pathname, isAdmin]);
 
   useEffect(() => {
     setOpen(false);
@@ -187,7 +217,11 @@ export function FinancasSidebar({
           </button>
         </div>
 
-        <nav className="flex-1 space-y-4 overflow-y-auto px-2.5 pb-3">
+        <div className="relative flex min-h-0 flex-1 flex-col">
+        <nav
+          ref={navRef}
+          className="flex-1 space-y-4 overflow-y-auto px-2.5 pb-3 [@media(max-height:820px)]:space-y-2.5"
+        >
           {groups.map((group) => (
             <div key={group.label}>
               <p className="mb-1 px-3 text-[11px] font-medium text-muted-foreground/80">
@@ -305,6 +339,14 @@ export function FinancasSidebar({
             </div>
           </div>
         </nav>
+          <div
+            aria-hidden
+            className={cn(
+              "pointer-events-none absolute inset-x-0 bottom-0 h-10 rounded-b-none bg-gradient-to-t from-card to-transparent transition-opacity duration-200",
+              moreBelow ? "opacity-100" : "opacity-0"
+            )}
+          />
+        </div>
 
         <div className="space-y-2 border-t border-border/70 p-2.5">
           <div className="flex items-center justify-between px-2">

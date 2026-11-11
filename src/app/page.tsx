@@ -271,7 +271,7 @@ export default async function FinancasLandingPage() {
               um número.
             </>
           }
-          text="Quem pagou a mais recebe de volta. O sistema soma tudo e mostra quanto um devolve pro outro. Depois é só registrar o Pix."
+          text="Quem pagou a mais recebe de volta. O sistema soma tudo e mostra quanto um devolve pro outro. Registrou o Pix, zerou."
         >
           <ExampleCard>
             <p className="text-xs text-neutral-500">Léo devolve pra Ana</p>
@@ -370,7 +370,7 @@ const EXTRAS = [
   {
     icon: Repeat,
     title: "Recorrências",
-    text: "Aluguel, assinatura, salário: cadastra uma vez e gera os lançamentos do mês num clique.",
+    text: "Aluguel, assinatura, salário: cadastra uma vez e as contas do mês aparecem sozinhas pra pagar.",
   },
   {
     icon: History,

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireHousehold, HouseholdAuthError } from "@/lib/financas/session";
 import { ensureInvoice } from "@/lib/financas/credit-cards";
-import { parseLocalDate, parseLocalDateEnd } from "@/lib/financas/dates";
+import { parseLocalDate, parseLocalDateEnd, startOfTodayBR, todayBR } from "@/lib/financas/dates";
 
 const VALID_TYPES = ["INCOME", "EXPENSE", "TRANSFER"];
 const VALID_OWNERS = ["PARTNER_A", "PARTNER_B", "COUPLE"];
@@ -52,8 +52,7 @@ export async function GET(req: Request) {
 
     if (!status) return NextResponse.json(transactions);
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const today = startOfTodayBR();
     const filtered = transactions.filter((t) => {
       if (status === "paid") return t.paid;
       if (status === "pending") return !t.paid && new Date(t.date) >= today;
@@ -180,7 +179,7 @@ export async function POST(req: Request) {
         categoryId: type === "TRANSFER" ? null : (categoryId || null),
         invoiceId,
         paid: isPaid,
-        paidAt: isPaid ? new Date() : null,
+        paidAt: isPaid ? todayBR() : null,
       },
       include: {
         account: { select: { id: true, name: true, color: true, type: true } },

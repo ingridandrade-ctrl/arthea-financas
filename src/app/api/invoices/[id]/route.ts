@@ -1,7 +1,14 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireHousehold, HouseholdAuthError } from "@/lib/financas/session";
-import { parseLocalDate } from "@/lib/financas/dates";
+import { parseLocalDate, todayBR } from "@/lib/financas/dates";
+
+/** Fatura que outra requisição pagou no meio do caminho (clique duplo, duas abas). */
+class InvoiceAlreadyPaid extends Error {}
+
+const ALREADY_PAID = {
+  error: "Essa fatura já está paga. Se o pagamento foi lançado errado, reabra a fatura antes de pagar de novo.",
+};
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
   try {
@@ -16,21 +23,28 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     const action = body?.action;
 
     if (action === "pay") {
+      // Pagar duas vezes criava duas transferências: o dinheiro saía da conta
+      // em dobro e o cartão ficava com crédito que não existe.
+      if (inv.status === "PAID") {
+        return NextResponse.json(ALREADY_PAID, { status: 409 });
+      }
       const skipTransfer = body?.skipTransfer === true;
-      const paidAt = body?.paidAt ? parseLocalDate(body.paidAt) : new Date();
+      const paidAt = body?.paidAt ? parseLocalDate(body.paidAt) : todayBR();
       const paidBy: "PARTNER_A" | "PARTNER_B" | null =
         body?.paidBy === "PARTNER_A" || body?.paidBy === "PARTNER_B" ? body.paidBy : null;
 
       if (skipTransfer) {
         const updated = await prisma.$transaction(async (tx) => {
-          const inv2 = await tx.finCreditCardInvoice.update({
-            where: { id: inv.id },
+          const claimed = await tx.finCreditCardInvoice.updateMany({
+            where: { id: inv.id, status: { not: "PAID" } },
             data: {
               paidAt,
               paymentAccountId: null,
               status: "PAID",
             },
           });
+          if (claimed.count === 0) throw new InvoiceAlreadyPaid();
+          const inv2 = await tx.finCreditCardInvoice.findUniqueOrThrow({ where: { id: inv.id } });
           const txUpdate: any = { paid: true, paidAt };
           if (paidBy) txUpdate.paidByOwner = paidBy;
           await tx.finTransaction.updateMany({
@@ -61,6 +75,18 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
           : null);
 
       const result = await prisma.$transaction(async (tx) => {
+        // Marca como paga ANTES de criar a transferência, só se ainda não
+        // estiver: dois cliques ao mesmo tempo passam os dois pela checagem
+        // lá de cima, mas só um consegue "pegar" a fatura aqui.
+        const claimed = await tx.finCreditCardInvoice.updateMany({
+          where: { id: inv.id, status: { not: "PAID" } },
+          data: {
+            paidAt,
+            paymentAccountId,
+            status: "PAID",
+          },
+        });
+        if (claimed.count === 0) throw new InvoiceAlreadyPaid();
         const transferTx = await tx.finTransaction.create({
           data: {
             householdId: household.id,
@@ -73,14 +99,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
             toAccountId: inv.accountId,
           },
         });
-        const updated = await tx.finCreditCardInvoice.update({
-          where: { id: inv.id },
-          data: {
-            paidAt,
-            paymentAccountId,
-            status: "PAID",
-          },
-        });
+        const updated = await tx.finCreditCardInvoice.findUniqueOrThrow({ where: { id: inv.id } });
         const txUpdate: any = { paid: true, paidAt };
         if (effectivePaidBy) txUpdate.paidByOwner = effectivePaidBy;
         await tx.finTransaction.updateMany({
@@ -175,6 +194,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     return NextResponse.json(updated);
   } catch (e) {
     if (e instanceof HouseholdAuthError) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+    if (e instanceof InvoiceAlreadyPaid) return NextResponse.json(ALREADY_PAID, { status: 409 });
     throw e;
   }
 }

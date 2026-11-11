@@ -138,7 +138,11 @@ async function getJson(url: string) {
 export function DashboardClient() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [bills, setBills] = useState<Movement[]>([]);
-  const [couple, setCouple] = useState<CoupleBalance | null>(null);
+  // open = saldo acumulado em aberto (histórico inteiro); month = recorte do mês.
+  const [couple, setCouple] = useState<{
+    open: Pick<CoupleBalance, "netBalance"> | null;
+    month: CoupleBalance | null;
+  }>({ open: null, month: null });
   const [month, setMonth] = useState(thisMonth());
   const [ownerFilter, setOwnerFilter] = useState<OwnerFilter>("all");
   const [refreshing, setRefreshing] = useState(true);
@@ -171,7 +175,7 @@ export function DashboardClient() {
       if (seq !== requestSeq.current) return;
       setData(d);
       setBills(Array.isArray(b) ? b : []);
-      setCouple(c?.balance ?? null);
+      setCouple({ open: c?.openBalance ?? c?.balance ?? null, month: c?.balance ?? null });
     } catch (err) {
       if (seq !== requestSeq.current) return;
       console.error("[dashboard] load failed", err);
@@ -337,7 +341,8 @@ export function DashboardClient() {
             className="md:col-span-2 xl:col-span-4 xl:row-span-2"
           />
           <CoupleCard
-            couple={couple}
+            open={couple.open}
+            month={couple.month}
             names={data.household}
             monthName={monthName}
             index={2}
@@ -880,13 +885,17 @@ function BillsCard({
 /* ─────────────────────────── acerto do casal ─────────────────────────── */
 
 function CoupleCard({
-  couple,
+  open,
+  month,
   names,
   monthName,
   index,
   className,
 }: {
-  couple: CoupleBalance | null;
+  /** saldo acumulado em aberto — o "quem deve a quem agora" */
+  open: Pick<CoupleBalance, "netBalance"> | null;
+  /** o que aconteceu no mês selecionado */
+  month: CoupleBalance | null;
   names: { partnerAName: string; partnerBName: string };
   monthName: string;
   index: number;
@@ -894,39 +903,41 @@ function CoupleCard({
 }) {
   const a = names.partnerAName;
   const b = names.partnerBName;
-  const d = couple?.details;
-  // Quanto cada um pagou da parte do outro (gastos do casal + pessoais).
+  const d = month?.details;
+  // Quanto cada um pagou da parte do outro no mês (gastos do casal + pessoais).
   const advancedA = d ? d.aPaidForCouple + d.aPaidForB : 0;
   const advancedB = d ? d.bPaidForCouple + d.bPaidForA : 0;
-  const settled = d ? d.settlementsAtoB + d.settlementsBtoA : 0;
-  const net = couple?.netBalance ?? 0;
+  const settledInMonth = d ? d.settlementsAtoB + d.settlementsBtoA : 0;
+  const totalAdvanced = advancedA + advancedB;
+  const pctA = totalAdvanced > 0 ? (advancedA / totalAdvanced) * 100 : 50;
+  // O número grande é o acumulado: um Pix de dezembro quita novembro.
+  const net = open?.netBalance ?? 0;
   const isSettled = Math.abs(net) < 0.01;
   // net > 0: B deve a A.
   const debtor: Owner = net > 0 ? "PARTNER_B" : "PARTNER_A";
   const creditor: Owner = net > 0 ? "PARTNER_A" : "PARTNER_B";
   const nameOf = (o: Owner) => (o === "PARTNER_A" ? a : b);
-  const totalAdvanced = advancedA + advancedB;
-  const pctA = totalAdvanced > 0 ? (advancedA / totalAdvanced) * 100 : 50;
-  const lines = couple
+  const lines = month
     ? [
-        ...couple.contributions.bOwesA.map((c) => ({ ...c, creditor: "PARTNER_A" as Owner })),
-        ...couple.contributions.aOwesB.map((c) => ({ ...c, creditor: "PARTNER_B" as Owner })),
+        ...month.contributions.bOwesA.map((c) => ({ ...c, creditor: "PARTNER_A" as Owner })),
+        ...month.contributions.aOwesB.map((c) => ({ ...c, creditor: "PARTNER_B" as Owner })),
       ]
         .sort((x, y) => y.contributionAmount - x.contributionAmount)
         .slice(0, 4)
     : [];
+  const nothingAtAll = !open || (isSettled && totalAdvanced === 0 && settledInMonth === 0);
 
   return (
     <Card index={index} className={cn("flex flex-col", className)}>
       <CardHeader title="Acerto do casal" icon={Scale} color="var(--color-couple)" />
-      {!couple || (totalAdvanced === 0 && settled === 0) ? (
+      {nothingAtAll ? (
         <EmptyNote>
-          Nada pra acertar em {monthName}. As compras entram aqui quando um paga a parte do outro.
+          Nada pra acertar. As compras entram aqui quando um paga a parte do outro.
         </EmptyNote>
       ) : (
         <>
           <p className="text-xs text-muted-foreground">
-            {isSettled ? `Saldo de ${monthName}` : `${nameOf(debtor)} devolve pra ${nameOf(creditor)}`}
+            {isSettled ? "Em aberto hoje" : `${nameOf(debtor)} devolve pra ${nameOf(creditor)}`}
           </p>
           <div className="mt-1 flex items-center gap-3">
             <AnimatedMoney value={Math.abs(net)} />
@@ -936,90 +947,107 @@ function CoupleCard({
               </span>
             )}
           </div>
+          {!isSettled && (
+            <p className="mt-1.5 text-xs text-muted-foreground">
+              em aberto hoje, somando todos os meses
+            </p>
+          )}
 
-          <div className="mt-5 flex items-end justify-between gap-3 text-xs">
-            <div>
-              <p className="flex items-center gap-1.5 text-muted-foreground">
-                <span className="inline-block h-1.5 w-1.5 rounded-full bg-partner-a" />
-                {a} adiantou
-              </p>
-              <p className="mt-0.5 text-sm font-semibold tabular-nums">{formatCurrency(advancedA)}</p>
-            </div>
-            <div className="text-right">
-              <p className="flex items-center justify-end gap-1.5 text-muted-foreground">
-                {b} adiantou
-                <span className="inline-block h-1.5 w-1.5 rounded-full bg-partner-b" />
-              </p>
-              <p className="mt-0.5 text-sm font-semibold tabular-nums">{formatCurrency(advancedB)}</p>
-            </div>
-          </div>
-          <div
-            className="grow-x mt-2 flex h-6 w-full gap-0.5 overflow-hidden rounded-lg text-[11px] font-semibold text-white"
-            title={`Parte do outro que cada um pagou em ${monthName}`}
-          >
-            {advancedA > 0 && (
-              <span
-                className="flex items-center bg-partner-a px-2"
-                style={{ width: `${pctA}%` }}
+          <p className="mt-5 text-xs font-semibold">Em {monthName}</p>
+          {totalAdvanced === 0 ? (
+            <p className="mt-1 text-sm text-muted-foreground">
+              Ninguém pagou a parte do outro neste mês.
+            </p>
+          ) : (
+            <>
+              <div className="mt-2 flex items-end justify-between gap-3 text-xs">
+                <div>
+                  <p className="flex items-center gap-1.5 text-muted-foreground">
+                    <span className="inline-block h-1.5 w-1.5 rounded-full bg-partner-a" />
+                    {a} adiantou
+                  </p>
+                  <p className="mt-0.5 text-sm font-semibold tabular-nums">
+                    {formatCurrency(advancedA)}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="flex items-center justify-end gap-1.5 text-muted-foreground">
+                    {b} adiantou
+                    <span className="inline-block h-1.5 w-1.5 rounded-full bg-partner-b" />
+                  </p>
+                  <p className="mt-0.5 text-sm font-semibold tabular-nums">
+                    {formatCurrency(advancedB)}
+                  </p>
+                </div>
+              </div>
+              <div
+                className="grow-x mt-2 flex h-6 w-full gap-0.5 overflow-hidden rounded-lg text-[11px] font-semibold text-white"
+                title={`Parte do outro que cada um pagou em ${monthName}`}
               >
-                {pctA >= 18 && `${pctA.toFixed(0)}%`}
+                {advancedA > 0 && (
+                  <span className="flex items-center bg-partner-a px-2" style={{ width: `${pctA}%` }}>
+                    {pctA >= 18 && `${pctA.toFixed(0)}%`}
+                  </span>
+                )}
+                {advancedB > 0 && (
+                  <span
+                    className="flex items-center justify-end bg-partner-b px-2"
+                    style={{ width: `${100 - pctA}%` }}
+                  >
+                    {100 - pctA >= 18 && `${(100 - pctA).toFixed(0)}%`}
+                  </span>
+                )}
+              </div>
+            </>
+          )}
+
+          {settledInMonth > 0 && (
+            <p className="mt-3 text-xs text-muted-foreground">
+              Acertos registrados no mês:{" "}
+              <span className="font-semibold tabular-nums text-foreground">
+                {formatCurrency(settledInMonth)}
               </span>
-            )}
-            {advancedB > 0 && (
-              <span
-                className="flex items-center justify-end bg-partner-b px-2"
-                style={{ width: `${100 - pctA}%` }}
-              >
-                {100 - pctA >= 18 && `${(100 - pctA).toFixed(0)}%`}
-              </span>
-            )}
-          </div>
+            </p>
+          )}
 
           {lines.length > 0 && (
-            <>
-              <p className="mt-5 text-xs font-semibold">De onde vem</p>
-              <ul className="mt-1 divide-y divide-border">
-                {lines.map((l) => (
-                  <li key={`${l.creditor}-${l.id}`} className="flex items-center gap-2.5 py-2 text-sm">
-                    <span
-                      className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
-                      style={{ backgroundColor: OWNER_COLOR[l.creditor] }}
-                      title={`${nameOf(l.creditor)} pagou`}
-                    />
-                    <span className="min-w-0 flex-1 truncate">{l.description}</span>
-                    <span className="shrink-0 font-semibold tabular-nums">
-                      {formatCurrency(l.contributionAmount)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </>
+            <ul className="mt-3 divide-y divide-border">
+              {lines.map((l) => (
+                <li key={`${l.creditor}-${l.id}`} className="flex items-center gap-2.5 py-2 text-sm">
+                  <span
+                    className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
+                    style={{ backgroundColor: OWNER_COLOR[l.creditor] }}
+                    title={`${nameOf(l.creditor)} pagou`}
+                  />
+                  <span className="min-w-0 flex-1 truncate">{l.description}</span>
+                  <span className="shrink-0 font-semibold tabular-nums">
+                    {formatCurrency(l.contributionAmount)}
+                  </span>
+                </li>
+              ))}
+            </ul>
           )}
         </>
       )}
 
       <div className="mt-auto flex items-center justify-between gap-3 border-t border-border pt-3">
         <p className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-          {couple && !isSettled ? (
+          {!nothingAtAll && !isSettled && (
             <>
               <Avatar name={nameOf(debtor)} owner={debtor} />
               <ArrowRight className="h-3 w-3 shrink-0" />
               <Avatar name={nameOf(creditor)} owner={creditor} />
-              <span className="truncate">
-                {settled > 0 ? `já acertado: ${formatCurrency(settled)}` : "falta acertar"}
-              </span>
             </>
-          ) : (
-            <span className="truncate">
-              {settled > 0 ? `Acertos do mês: ${formatCurrency(settled)}` : "Sem acertos no mês"}
-            </span>
           )}
+          <span className="truncate">
+            {nothingAtAll ? "Sem nada em aberto" : isSettled ? "Tudo certo entre vocês" : "falta acertar"}
+          </span>
         </p>
         <Link
           href="/casal"
           className="shrink-0 rounded-lg border border-border px-3 py-1.5 text-xs font-medium hover:bg-muted"
         >
-          {couple && !isSettled ? "Registrar acerto" : "Abrir Casal"}
+          {!nothingAtAll && !isSettled ? "Registrar acerto" : "Abrir Casal"}
         </Link>
       </div>
     </Card>
@@ -1292,7 +1320,6 @@ function CategoriesCard({
           <CategoryDonut
             data={categories.map((c) => ({ name: c.name, amount: c.amount, color: c.color }))}
             size={190}
-            compact
           />
           <ul className="mt-4 space-y-2 text-xs">
             {categories.slice(0, 5).map((c) => (

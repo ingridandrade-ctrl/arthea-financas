@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireHousehold, HouseholdAuthError } from "@/lib/financas/session";
-import { parseLocalDate, parseLocalDateEnd } from "@/lib/financas/dates";
+import { parseLocalDate, parseLocalDateEnd, startOfTodayBR } from "@/lib/financas/dates";
 
 type Owner = "PARTNER_A" | "PARTNER_B" | "COUPLE";
 
@@ -47,7 +47,11 @@ export async function GET(req: Request) {
     const typeFilter = searchParams.get("type");
     const statusFilter = searchParams.get("status");
     const q = searchParams.get("q");
-    const limit = Math.min(parseInt(searchParams.get("limit") || "200", 10), 500);
+    const limit = Math.min(Math.max(parseInt(searchParams.get("limit") || "200", 10) || 200, 1), 2000);
+    // summary=1: devolve também a contagem e os totais do filtro INTEIRO.
+    // A lista vem cortada em `limit` linhas; somar só o que veio (como a tela
+    // fazia) dava totais errados em qualquer período com mais de 200 itens.
+    const withSummary = searchParams.get("summary") === "1";
 
     const fromDate = fromStr ? parseLocalDate(fromStr) : null;
     const toDate = toStr ? parseLocalDateEnd(toStr) : null;
@@ -117,8 +121,8 @@ export async function GET(req: Request) {
         })
       : [];
 
-    const today = new Date();
-    today.setUTCHours(0, 0, 0, 0);
+    // "Hoje" de Brasília: o que vence hoje só fica atrasado amanhã.
+    const today = startOfTodayBR();
 
     const rows: MovementRow[] = [];
 
@@ -176,7 +180,22 @@ export async function GET(req: Request) {
         ? rows.filter((r) => r.status === statusFilter)
         : rows;
 
-    return NextResponse.json(filtered.slice(0, limit));
+    if (!withSummary) return NextResponse.json(filtered.slice(0, limit));
+
+    const counts = { INCOME: 0, EXPENSE: 0, TRANSFER: 0, INVOICE: 0 };
+    let income = 0;
+    let expense = 0;
+    for (const r of filtered) {
+      counts[r.type] += 1;
+      if (r.type === "INCOME") income += r.amount;
+      else if (r.type === "EXPENSE" || r.type === "INVOICE") expense += r.amount;
+    }
+    return NextResponse.json({
+      rows: filtered.slice(0, limit),
+      totalCount: filtered.length,
+      counts,
+      totals: { income, expense },
+    });
   } catch (e) {
     if (e instanceof HouseholdAuthError) {
       return NextResponse.json({ error: "Não autenticado" }, { status: 401 });

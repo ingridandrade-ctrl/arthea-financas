@@ -138,3 +138,11 @@ export function calculateDealProbability(stageName: string): number {
       return 0;
   }
 }
+
+/**
+ * Só a primeira letra em maiúscula. O `capitalize` do CSS sobe a primeira
+ * letra de TODA palavra, e "novembro de 2026" virava "Novembro De 2026".
+ */
+export function capFirst(text: string) {
+  return text ? text.charAt(0).toUpperCase() + text.slice(1) : text;
+}

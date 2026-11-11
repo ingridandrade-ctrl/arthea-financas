@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight, Save } from "lucide-react";
 import { PageHeader } from "@/components/financas/page-header";
-import { formatCurrency } from "@/lib/utils";
+import { capFirst, formatCurrency } from "@/lib/utils";
+import { PageSkeleton } from "@/components/financas/page-skeleton";
 
 type BudgetItem = {
   categoryId: string;
@@ -107,7 +108,7 @@ export function OrcamentoClient() {
                 <button onClick={() => setMonth(shiftMonth(month, -1))} className="p-1.5 rounded hover:bg-muted">
                   <ChevronLeft className="w-4 h-4" />
                 </button>
-                <span className="text-sm font-medium px-2 capitalize">{monthLabel(month)}</span>
+                <span className="text-sm font-medium px-2">{capFirst(monthLabel(month))}</span>
                 <button onClick={() => setMonth(shiftMonth(month, 1))} className="p-1.5 rounded hover:bg-muted">
                   <ChevronRight className="w-4 h-4" />
                 </button>
@@ -167,7 +168,7 @@ export function OrcamentoClient() {
       )}
 
       {loading ? (
-        <p className="text-sm text-muted-foreground">Carregando...</p>
+        <PageSkeleton />
       ) : items.length === 0 ? (
         <div className="text-center py-12 bg-card border border-border rounded-xl">
           <p className="text-sm text-muted-foreground">

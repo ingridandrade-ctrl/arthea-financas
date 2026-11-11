@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/financas/page-header";
+import { PageSkeleton } from "@/components/financas/page-skeleton";
 
 export function ConfigClient() {
   const [partnerAName, setPartnerAName] = useState("");
@@ -52,7 +53,7 @@ export function ConfigClient() {
       />
 
       {loading ? (
-        <p className="text-sm text-muted-foreground">Carregando...</p>
+        <PageSkeleton variant="rows" rows={4} className="max-w-xl" />
       ) : (
         <form
           onSubmit={submit}
@@ -192,7 +193,7 @@ function MembrosSection() {
 
       <div className="space-y-2">
         {members === null ? (
-          <p className="text-sm text-muted-foreground">Carregando...</p>
+          <PageSkeleton variant="rows" rows={2} />
         ) : (
           members.map((m) => (
             <div

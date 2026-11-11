@@ -19,8 +19,11 @@ export async function POST(req: Request) {
   const user = await prisma.user.findUnique({
     where: { email: normalized },
     include: {
+      // A casa em que a pessoa entrou por último. Quem já tinha conta
+      // própria e depois aceitou o convite do par caía, no login seguinte,
+      // na casa antiga e vazia (a mais velha) — e não tinha como trocar.
       memberships: {
-        orderBy: { createdAt: "asc" },
+        orderBy: { createdAt: "desc" },
         take: 1,
       },
     },

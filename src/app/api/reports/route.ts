@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireHousehold, HouseholdAuthError } from "@/lib/financas/session";
+import { nowPartsBR } from "@/lib/financas/dates";
 
 export async function GET(req: Request) {
   try {
     const household = await requireHousehold();
     const { searchParams } = new URL(req.url);
     const yearParam = searchParams.get("year");
-    const year = yearParam && /^\d{4}$/.test(yearParam) ? parseInt(yearParam, 10) : new Date().getUTCFullYear();
+    const year = yearParam && /^\d{4}$/.test(yearParam) ? parseInt(yearParam, 10) : nowPartsBR().year;
     const start = new Date(Date.UTC(year, 0, 1));
     const end = new Date(Date.UTC(year + 1, 0, 1));
 

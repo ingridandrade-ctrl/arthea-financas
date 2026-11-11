@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { ensureInvoice } from "./credit-cards";
+import { endOfTodayBR, nowPartsBR } from "./dates";
 
 type RecurringRule = {
   id: string;
@@ -86,12 +87,35 @@ export function nextOccurrencesUntil(rule: RecurringRule, until: Date): Date[] {
   return occurrences;
 }
 
-function endOfTodayUTC(): Date {
-  const now = new Date();
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999));
+function normalizeText(text: string): string {
+  return text
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
 }
 
-export async function runRecurringForHousehold(householdId: string, until: Date = endOfTodayUTC()) {
+/**
+ * Gera os lançamentos das recorrências ativas. Roda sozinho quando alguém abre
+ * o sistema (layout logado e painel) e no botão "Gerar agora".
+ *
+ * Regras:
+ * - Conta a pagar (despesa fora do cartão) nasce PENDENTE e já é criada pro
+ *   mês inteiro, pra aparecer em "Contas a pagar" antes do vencimento. Quem
+ *   paga marca como paga.
+ * - Receita, transferência e compra no cartão continuam como antes: só até
+ *   hoje, já efetivadas (a compra no cartão entra na fatura dela).
+ * - Meses anteriores ao atual NÃO são preenchidos automaticamente — abrir o
+ *   sistema não pode mudar o total de um mês que já passou. A exceção é a
+ *   regra recém-criada (`backfillRuleId`): se a pessoa escolheu uma data de
+ *   início no passado, o histórico entra como já pago, como sempre foi.
+ * - Se já existe um lançamento manual igual no mesmo mês (mesma conta, valor
+ *   e descrição), ele é adotado pela regra em vez de duplicar.
+ */
+export async function runRecurringForHousehold(
+  householdId: string,
+  opts: { backfillRuleId?: string } = {}
+) {
   const rules = await prisma.finRecurringRule.findMany({
     where: { householdId, active: true },
     include: {
@@ -99,22 +123,62 @@ export async function runRecurringForHousehold(householdId: string, until: Date 
     },
   });
 
+  const { year, month } = nowPartsBR();
+  const monthStart = new Date(Date.UTC(year, month, 1, 0, 0, 0, 0));
+  const monthEnd = new Date(Date.UTC(year, month + 1, 0, 23, 59, 59, 999));
+  const todayEnd = endOfTodayBR();
+
   let created = 0;
   for (const rule of rules) {
-    const occs = nextOccurrencesUntil(rule as any, until);
+    const isCard = rule.account.type === "CREDIT_CARD";
+    const isBill = rule.type === "EXPENSE" && !isCard;
+    const occs = nextOccurrencesUntil(rule as any, isBill ? monthEnd : todayEnd);
     if (occs.length === 0) continue;
 
     for (const date of occs) {
-      // Wrap the dedupe check + create in a transaction so two concurrent
-      // calls can't both insert the same (recurringId, date).
+      const beforeThisMonth = date < monthStart;
+      if (beforeThisMonth && rule.id !== opts.backfillRuleId) continue;
+      const pending = isBill && !beforeThisMonth;
+
       const result = await prisma.$transaction(async (tx) => {
+        // Uma regra por vez: duas pessoas da casa abrindo o sistema no mesmo
+        // segundo não podem criar a mesma conta duas vezes.
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${rule.id}))`;
+
         const dupeExists = await tx.finTransaction.findFirst({
           where: { householdId, recurringId: rule.id, date },
           select: { id: true },
         });
         if (dupeExists) return false;
+
+        if (rule.frequency !== "WEEKLY") {
+          const sameMonthStart = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
+          const nextMonthStart = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1));
+          const candidates = await tx.finTransaction.findMany({
+            where: {
+              householdId,
+              recurringId: null,
+              type: rule.type,
+              accountId: rule.accountId,
+              amount: { gte: rule.amount - 0.005, lte: rule.amount + 0.005 },
+              date: { gte: sameMonthStart, lt: nextMonthStart },
+            },
+            select: { id: true, description: true },
+          });
+          const twin = candidates.find(
+            (c) => normalizeText(c.description) === normalizeText(rule.description)
+          );
+          if (twin) {
+            await tx.finTransaction.update({
+              where: { id: twin.id },
+              data: { recurringId: rule.id },
+            });
+            return false;
+          }
+        }
+
         let invoiceId: string | null = null;
-        if (rule.type === "EXPENSE" && rule.account.type === "CREDIT_CARD") {
+        if (rule.type === "EXPENSE" && isCard) {
           const inv = await ensureInvoice(householdId, rule.account, date);
           invoiceId = inv?.id ?? null;
         }
@@ -132,6 +196,8 @@ export async function runRecurringForHousehold(householdId: string, until: Date 
             categoryId: rule.type === "TRANSFER" ? null : rule.categoryId,
             recurringId: rule.id,
             invoiceId,
+            paid: !pending,
+            paidAt: pending ? null : date,
           },
         });
         return true;

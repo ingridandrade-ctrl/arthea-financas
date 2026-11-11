@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireHousehold, HouseholdAuthError } from "@/lib/financas/session";
+import { nowPartsBR, startOfTodayBR } from "@/lib/financas/dates";
 import { computeAccountBalances } from "@/lib/financas/balances";
+import { runRecurringForHousehold } from "@/lib/financas/recurring";
 
 type Owner = "PARTNER_A" | "PARTNER_B" | "COUPLE";
 
@@ -11,6 +13,15 @@ export async function GET(req: Request) {
   try {
     const household = await requireHousehold();
     const { searchParams } = new URL(req.url);
+
+    // Painel aberto há dias (aba esquecida) também vira o mês: gera as
+    // recorrências que faltam antes de montar os números. Quando não há nada
+    // pra gerar é uma consulta só.
+    try {
+      await runRecurringForHousehold(household.id);
+    } catch (err) {
+      console.error("[recorrencias] geração automática falhou", err);
+    }
 
     const monthParam = searchParams.get("month");
     const fromParam = searchParams.get("from");
@@ -24,7 +35,9 @@ export async function GET(req: Request) {
         ? [ownerFilter as Owner]
         : ALL_OWNERS;
 
-    const now = new Date();
+    // "Agora" de Brasília, pra virada de mês/dia não acontecer às 21h.
+    const todayParts = nowPartsBR();
+    const today = startOfTodayBR();
     let year: number;
     let month: number;
     if (monthParam && /^\d{4}-\d{2}$/.test(monthParam)) {
@@ -32,8 +45,8 @@ export async function GET(req: Request) {
       year = y;
       month = m - 1;
     } else {
-      year = now.getUTCFullYear();
-      month = now.getUTCMonth();
+      year = todayParts.year;
+      month = todayParts.month;
     }
 
     // from/to (YYYY-MM-DD) tem precedência sobre month quando presentes.
@@ -64,7 +77,7 @@ export async function GET(req: Request) {
     const prevStart = new Date(start.getTime() - rangeMs);
     const sixMonthsAgo = new Date(Date.UTC(year, month - 5, 1, 0, 0, 0, 0));
     const sevenDaysAgo = new Date(
-      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 6, 0, 0, 0, 0)
+      Date.UTC(todayParts.year, todayParts.month, todayParts.day - 6, 0, 0, 0, 0)
     );
 
     // Faturas dos cartões no mês selecionado e nos 2 seguintes (cartão
@@ -130,8 +143,8 @@ export async function GET(req: Request) {
       // não paga; fechada/atrasada saem das datas.
       let status: "OPEN" | "CLOSED" | "PAID" | "OVERDUE" = inv.status;
       if (status !== "PAID") {
-        if (inv.closingDate <= now && status === "OPEN") status = "CLOSED";
-        if (inv.dueDate < now) status = "OVERDUE";
+        if (inv.closingDate < today && status === "OPEN") status = "CLOSED";
+        if (inv.dueDate < today) status = "OVERDUE";
       }
       return {
         id: inv.id,

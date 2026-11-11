@@ -9,6 +9,8 @@ import { Modal } from "@/components/ui/modal";
 import { PageHeader } from "@/components/financas/page-header";
 import { formatCurrency } from "@/lib/utils";
 import { CategoryDonut, IncomeExpenseLine } from "@/components/financas/charts";
+import { PageSkeleton } from "@/components/financas/page-skeleton";
+import { localISODate, todayISO } from "@/lib/financas/local-date";
 
 type Settings = { partnerAName: string; partnerBName: string };
 
@@ -52,10 +54,8 @@ type Balance = {
   };
 };
 
-function todayISO() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
+/** Saldo acumulado em aberto (histórico inteiro), sem as listas de origem. */
+type OpenBalance = Pick<Balance, "netBalance" | "whoOwes" | "amount" | "details">;
 
 type DashboardLite = {
   totals: { income: number; expense: number };
@@ -66,7 +66,9 @@ type DashboardLite = {
 export function CasalClient() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [settlements, setSettlements] = useState<Settlement[]>([]);
+  // balance = recorte do período escolhido; openBalance = tudo, sempre.
   const [balance, setBalance] = useState<Balance | null>(null);
+  const [openBalance, setOpenBalance] = useState<OpenBalance | null>(null);
   const [dash, setDash] = useState<DashboardLite | null>(null);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
@@ -76,37 +78,35 @@ export function CasalClient() {
   const [customFrom, setCustomFrom] = useState<string>("");
   const [customTo, setCustomTo] = useState<string>("");
 
-  const pad = (n: number) => String(n).padStart(2, "0");
-  const isoDay = (d: Date) =>
-    `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
-
   function getRange(): { from: string | null; to: string | null } {
+    // Mês "de agora" no fuso de quem está usando. Com UTC, quem abria a tela
+    // depois das 21h no último dia do mês já via "Este mês" como o mês seguinte.
     const now = new Date();
-    const y = now.getUTCFullYear();
-    const mo = now.getUTCMonth();
+    const y = now.getFullYear();
+    const mo = now.getMonth();
     if (preset === "all") return { from: null, to: null };
     if (preset === "this_month") {
       return {
-        from: isoDay(new Date(Date.UTC(y, mo, 1))),
-        to: isoDay(new Date(Date.UTC(y, mo + 1, 0))),
+        from: localISODate(new Date(y, mo, 1)),
+        to: localISODate(new Date(y, mo + 1, 0)),
       };
     }
     if (preset === "last_month") {
       return {
-        from: isoDay(new Date(Date.UTC(y, mo - 1, 1))),
-        to: isoDay(new Date(Date.UTC(y, mo, 0))),
+        from: localISODate(new Date(y, mo - 1, 1)),
+        to: localISODate(new Date(y, mo, 0)),
       };
     }
     if (preset === "last_3") {
       return {
-        from: isoDay(new Date(Date.UTC(y, mo - 2, 1))),
-        to: isoDay(new Date(Date.UTC(y, mo + 1, 0))),
+        from: localISODate(new Date(y, mo - 2, 1)),
+        to: localISODate(new Date(y, mo + 1, 0)),
       };
     }
     if (preset === "year") {
       return {
         from: `${y}-01-01`,
-        to: isoDay(new Date(Date.UTC(y, mo + 1, 0))),
+        to: localISODate(new Date(y, mo + 1, 0)),
       };
     }
     // custom — só filtra se ambas as datas válidas; senão trata como "all"
@@ -145,6 +145,7 @@ export function CasalClient() {
     setSettings(s);
     setSettlements(d.settlements || []);
     setBalance(d.balance);
+    setOpenBalance(d.openBalance ?? d.balance ?? null);
     setDash({
       totals: dashRes.totals,
       expensesByCategory: dashRes.expensesByCategory || [],
@@ -195,6 +196,105 @@ export function CasalClient() {
           </button>
         }
       />
+
+      {/* === EM ABERTO HOJE ===
+          Sempre o histórico inteiro, independente do período escolhido
+          abaixo: um Pix de dezembro quita uma dívida de novembro. */}
+      {openBalance && (() => {
+        const net = openBalance.netBalance;
+        const isSettled = Math.abs(net) < 0.01;
+        const debtor = net < 0 ? "PARTNER_A" : "PARTNER_B";
+        const creditor = net < 0 ? "PARTNER_B" : "PARTNER_A";
+        const owed = Math.abs(net);
+        return (
+          <div
+            className="rounded-2xl border-2 border-primary/20 p-6 mb-3 shadow-sm"
+            style={{
+              background:
+                "linear-gradient(135deg, color-mix(in srgb, var(--color-brand) 10%, var(--color-card)) 0%, var(--color-card) 70%)",
+            }}
+          >
+            {isSettled ? (
+              <div className="text-center py-2">
+                <CheckCircle2 className="w-10 h-10 text-success mx-auto mb-2" />
+                <p className="text-xl font-semibold tracking-tight">Tudo certo!</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Ninguém deve nada a ninguém.
+                </p>
+              </div>
+            ) : (
+              <div>
+                <p className="text-xs text-muted-foreground uppercase tracking-wide mb-2">
+                  Em aberto hoje
+                </p>
+                <div className="flex items-center gap-3 flex-wrap mb-3">
+                  <span className="text-lg font-medium">{ownerName(debtor)}</span>
+                  <ArrowRight className="w-5 h-5 text-muted-foreground" />
+                  <span className="text-lg font-medium">{ownerName(creditor)}</span>
+                </div>
+                <p className="text-4xl font-bold text-primary tabular-nums tracking-tight">
+                  {formatCurrency(owed)}
+                </p>
+                <p className="text-xs text-muted-foreground mt-2 mb-4">
+                  Tudo que um pagou pelo outro até hoje, menos os acertos já registrados.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={() => setCreating(true)}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground hover:opacity-90 font-medium text-sm"
+                  >
+                    <CheckCircle2 className="w-4 h-4" />
+                    Registrar acerto
+                  </button>
+                  <button
+                    onClick={() => copyAmount(owed)}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-border hover:bg-muted text-sm"
+                  >
+                    <Copy className="w-4 h-4" />
+                    Copiar valor
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* === Composição do saldo em aberto — só linhas com valor > 0 === */}
+      {openBalance && (() => {
+        const a = ownerName("PARTNER_A");
+        const b = ownerName("PARTNER_B");
+        const rows = [
+          { label: `${a} pagou pelo casal`, value: openBalance.details.aPaidForCouple },
+          { label: `${b} pagou pelo casal`, value: openBalance.details.bPaidForCouple },
+          { label: `${a} pagou por ${b}`, value: openBalance.details.aPaidForB },
+          { label: `${b} pagou por ${a}`, value: openBalance.details.bPaidForA },
+          { label: `Acertos ${a} → ${b}`, value: openBalance.details.settlementsAtoB, divider: true },
+          { label: `Acertos ${b} → ${a}`, value: openBalance.details.settlementsBtoA },
+        ].filter((r) => r.value > 0.005);
+        if (rows.length === 0) return null;
+        return (
+          <details className="bg-card border border-border rounded-xl mb-6 group">
+            <summary className="px-5 py-3 cursor-pointer flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground select-none">
+              <HandCoins className="w-4 h-4" />
+              Como chegamos nesse saldo
+              <span className="ml-auto text-xs group-open:hidden">expandir</span>
+              <span className="ml-auto text-xs hidden group-open:inline">recolher</span>
+            </summary>
+            <ul className="space-y-2 text-sm p-5 pt-0">
+              {rows.map((r, i) => (
+                <li
+                  key={i}
+                  className={`flex justify-between ${r.divider ? "border-t border-border pt-2 mt-2" : ""}`}
+                >
+                  <span className="text-muted-foreground">{r.label}</span>
+                  <span className="tabular-nums">{formatCurrency(r.value)}</span>
+                </li>
+              ))}
+            </ul>
+          </details>
+        );
+      })()}
 
       <div className="mb-4 p-3 bg-muted/30 border border-border rounded-lg space-y-3">
         <div className="flex flex-wrap items-center gap-2">
@@ -261,112 +361,18 @@ export function CasalClient() {
           {filtered ? (
             <>
               Mostrando de <strong>{new Date(range.from + "T00:00:00").toLocaleDateString("pt-BR")}</strong>{" "}
-              a <strong>{new Date(range.to + "T00:00:00").toLocaleDateString("pt-BR")}</strong>. Filtra Saldo, Origem dos repasses e Histórico.
+              a <strong>{new Date(range.to + "T00:00:00").toLocaleDateString("pt-BR")}</strong>. O período filtra a visão geral, o histórico e a origem dos repasses. O valor em aberto acima considera tudo, sempre.
             </>
           ) : (
-            <>Mostrando <strong>todo o histórico</strong>. Filtra Saldo, Origem dos repasses e Histórico.</>
+            <>Mostrando <strong>todo o histórico</strong>.</>
           )}
         </p>
       </div>
 
       {loading ? (
-        <p className="text-sm text-muted-foreground">Carregando...</p>
+        <PageSkeleton />
       ) : (
         <>
-          {/* === SALDO HERO (no topo, ação primária) === */}
-          {balance && (() => {
-            const net = balance.netBalance;
-            const isSettled = Math.abs(net) < 0.01;
-            const debtor = net < 0 ? "PARTNER_A" : "PARTNER_B";
-            const creditor = net < 0 ? "PARTNER_B" : "PARTNER_A";
-            const owed = Math.abs(net);
-            return (
-              <div
-                className="rounded-2xl border-2 border-primary/20 p-6 mb-6 shadow-sm"
-                style={{
-                  background:
-                    "linear-gradient(135deg, color-mix(in srgb, var(--color-brand) 10%, var(--color-card)) 0%, var(--color-card) 70%)",
-                }}
-              >
-                {isSettled ? (
-                  <div className="text-center py-2">
-                    <CheckCircle2 className="w-10 h-10 text-success mx-auto mb-2" />
-                    <p className="text-xl font-semibold tracking-tight">Tudo certo!</p>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      Ninguém deve nada{filtered ? ` ${periodLabel}` : ""}.
-                    </p>
-                  </div>
-                ) : (
-                  <div>
-                    <p className="text-xs text-muted-foreground uppercase tracking-wide mb-2">
-                      Saldo {filtered ? periodLabel : "total"}
-                    </p>
-                    <div className="flex items-center gap-3 flex-wrap mb-3">
-                      <span className="text-lg font-medium">{ownerName(debtor)}</span>
-                      <ArrowRight className="w-5 h-5 text-muted-foreground" />
-                      <span className="text-lg font-medium">{ownerName(creditor)}</span>
-                    </div>
-                    <p className="text-4xl font-bold text-primary tabular-nums tracking-tight mb-4">
-                      {formatCurrency(owed)}
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        onClick={() => setCreating(true)}
-                        className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground hover:opacity-90 font-medium text-sm"
-                      >
-                        <CheckCircle2 className="w-4 h-4" />
-                        Já paguei — registrar acerto
-                      </button>
-                      <button
-                        onClick={() => copyAmount(owed)}
-                        className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-border hover:bg-muted text-sm"
-                      >
-                        <Copy className="w-4 h-4" />
-                        Copiar valor
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })()}
-
-          {/* === Composição compacta — só linhas com valor > 0 === */}
-          {balance && (() => {
-            const a = ownerName("PARTNER_A");
-            const b = ownerName("PARTNER_B");
-            const rows = [
-              { label: `${a} pagou pelo casal`, value: balance.details.aPaidForCouple },
-              { label: `${b} pagou pelo casal`, value: balance.details.bPaidForCouple },
-              { label: `${a} pagou por ${b}`, value: balance.details.aPaidForB },
-              { label: `${b} pagou por ${a}`, value: balance.details.bPaidForA },
-              { label: `Acertos ${a} → ${b}`, value: balance.details.settlementsAtoB, divider: true },
-              { label: `Acertos ${b} → ${a}`, value: balance.details.settlementsBtoA },
-            ].filter((r) => r.value > 0.005);
-            if (rows.length === 0) return null;
-            return (
-              <details className="bg-card border border-border rounded-xl mb-6 group">
-                <summary className="px-5 py-3 cursor-pointer flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground select-none">
-                  <HandCoins className="w-4 h-4" />
-                  Como chegamos nesse saldo
-                  <span className="ml-auto text-xs group-open:hidden">expandir</span>
-                  <span className="ml-auto text-xs hidden group-open:inline">recolher</span>
-                </summary>
-                <ul className="space-y-2 text-sm p-5 pt-0">
-                  {rows.map((r, i) => (
-                    <li
-                      key={i}
-                      className={`flex justify-between ${r.divider ? "border-t border-border pt-2 mt-2" : ""}`}
-                    >
-                      <span className="text-muted-foreground">{r.label}</span>
-                      <span className="tabular-nums">{formatCurrency(r.value)}</span>
-                    </li>
-                  ))}
-                </ul>
-              </details>
-            );
-          })()}
-
           {dash && (
             <>
               <div className="flex items-center gap-2 mb-3">
@@ -536,7 +542,7 @@ export function CasalClient() {
                 <Receipt className="w-4 h-4 text-muted-foreground" />
                 <h2 className="text-sm font-semibold">Origem dos repasses</h2>
                 <span className="text-xs text-muted-foreground ml-auto">
-                  Despesas que cada um pagou e ainda precisa receber de volta
+                  O que cada um pagou pelo outro no período
                 </span>
               </div>
               <div className="grid md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-border">
@@ -556,10 +562,10 @@ export function CasalClient() {
         </>
       )}
 
-      {creating && balance && settings && (
+      {creating && openBalance && settings && (
         <SettlementModal
           settings={settings}
-          suggested={balance}
+          suggested={openBalance}
           onClose={() => setCreating(false)}
           onSaved={() => {
             setCreating(false);
@@ -669,7 +675,7 @@ function SettlementModal({
   onSaved,
 }: {
   settings: Settings;
-  suggested: Balance;
+  suggested: OpenBalance;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -791,7 +797,7 @@ function SettlementModal({
           />
         </div>
         {error && <div className="text-sm text-destructive bg-destructive/10 p-2 rounded-lg">{error}</div>}
-        <div className="flex justify-end gap-2 pt-2">
+        <div className="modal-actions">
           <button type="button" onClick={onClose} className="px-4 py-2 rounded-lg border border-border hover:bg-muted">
             Cancelar
           </button>

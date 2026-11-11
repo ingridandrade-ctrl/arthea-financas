@@ -8,6 +8,7 @@ import { Modal } from "@/components/ui/modal";
 import { PageHeader } from "@/components/financas/page-header";
 import { formatCurrency } from "@/lib/utils";
 import { ACCOUNT_TYPE_LABEL } from "@/lib/financas/defaults";
+import { PageSkeleton } from "@/components/financas/page-skeleton";
 
 type Owner = "PARTNER_A" | "PARTNER_B" | "COUPLE";
 
@@ -118,7 +119,7 @@ export function ContasClient() {
       </div>
 
       {loading ? (
-        <p className="text-sm text-muted-foreground">Carregando...</p>
+        <PageSkeleton variant="cards" rows={3} />
       ) : active.length === 0 ? (
         <div className="text-center py-12 bg-card border border-border rounded-xl">
           <Wallet className="w-10 h-10 mx-auto text-muted-foreground mb-3" />
@@ -456,7 +457,7 @@ function AccountModal({
             {error}
           </div>
         )}
-        <div className="flex justify-end gap-2 pt-2">
+        <div className="modal-actions">
           <button
             type="button"
             onClick={onClose}

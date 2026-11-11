@@ -6,6 +6,7 @@ import { Modal } from "@/components/ui/modal";
 import { PageHeader } from "@/components/financas/page-header";
 import { toast } from "@/components/financas/toaster";
 import { confirmDialog } from "@/components/ui/confirm-dialog";
+import { PageSkeleton } from "@/components/financas/page-skeleton";
 
 type Category = {
   id: string;
@@ -96,7 +97,7 @@ export function CategoriasClient() {
       />
 
       {loading ? (
-        <p className="text-sm text-muted-foreground">Carregando...</p>
+        <PageSkeleton variant="rows" rows={8} />
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <CategorySection
@@ -344,7 +345,7 @@ function CategoryModal({
             {error}
           </div>
         )}
-        <div className="flex justify-end gap-2 pt-2">
+        <div className="modal-actions">
           <button
             type="button"
             onClick={onClose}

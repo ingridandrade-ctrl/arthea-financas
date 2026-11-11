@@ -7,6 +7,7 @@ import { Plus, Pencil, Power, Trash2, Repeat, PlayCircle, ArrowDownCircle, Arrow
 import { Modal } from "@/components/ui/modal";
 import { PageHeader } from "@/components/financas/page-header";
 import { formatCurrency } from "@/lib/utils";
+import { PageSkeleton } from "@/components/financas/page-skeleton";
 
 type Account = { id: string; name: string; color: string; type: string; archived: boolean };
 type Category = { id: string; name: string; kind: "INCOME" | "EXPENSE"; color: string; archived: boolean };
@@ -81,11 +82,22 @@ export function RecorrenciasClient() {
 
   async function runNow() {
     setRunning(true);
-    const res = await fetch("/api/recurring/run", { method: "POST" });
-    const data = await res.json();
-    setRunning(false);
-    toast.success(`${data.created || 0} lançamento(s) gerado(s)`);
-    loadAll();
+    try {
+      const res = await fetch("/api/recurring/run", { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || "Erro");
+      const n = data.created || 0;
+      toast.success(
+        n === 0
+          ? "Tudo em dia: não havia nada novo pra gerar"
+          : `${n} ${n === 1 ? "lançamento gerado" : "lançamentos gerados"}`
+      );
+      loadAll();
+    } catch {
+      toast.error("Não deu pra gerar agora. Confira a conexão e tente de novo.");
+    } finally {
+      setRunning(false);
+    }
   }
 
   const ownerLabel = (o: string) =>
@@ -95,14 +107,14 @@ export function RecorrenciasClient() {
     <div>
       <PageHeader
         title="Recorrências"
-        description="Lançamentos que se repetem automaticamente: salário, aluguel, assinaturas..."
+        description="Cadastre uma vez. As contas do mês nascem sozinhas, pendentes, em Contas a pagar."
         actions={
           <div className="flex items-center gap-2">
             <button
               onClick={runNow}
               disabled={running}
               className="flex items-center gap-2 px-4 py-2 rounded-lg border border-border hover:bg-muted disabled:opacity-50"
-              title="Gerar agora os lançamentos pendentes até hoje"
+              title="Os lançamentos são gerados sozinhos quando você abre o sistema. Use aqui só se quiser forçar agora."
             >
               <PlayCircle className="w-4 h-4" />
               {running ? "Gerando..." : "Gerar agora"}
@@ -119,7 +131,7 @@ export function RecorrenciasClient() {
       />
 
       {loading ? (
-        <p className="text-sm text-muted-foreground">Carregando...</p>
+        <PageSkeleton />
       ) : rules.length === 0 ? (
         <div className="text-center py-12 bg-card border border-border rounded-xl">
           <Repeat className="w-10 h-10 mx-auto text-muted-foreground mb-3" />
@@ -269,7 +281,7 @@ function RuleModal({
   const [startDate, setStartDate] = useState(rule ? rule.startDate.slice(0, 10) : todayISO());
   const [endDate, setEndDate] = useState(rule?.endDate ? rule.endDate.slice(0, 10) : "");
   const [notes, setNotes] = useState(rule?.notes || "");
-  const [applyToExisting, setApplyToExisting] = useState(true);
+  const [applyToExisting, setApplyToExisting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -323,7 +335,7 @@ function RuleModal({
       return;
     }
     if (!editing && typeof data.generated === "number" && data.generated > 0) {
-      toast.success("Recorrência criada", { description: `${data.generated} lançamento(s) já foram gerados em Lançamentos.` });
+      toast.success("Recorrência criada", { description: `${data.generated} lançamento(s) já aparecem em Movimentações.` });
     }
     if (editing && typeof data.updatedTransactions === "number" && data.updatedTransactions > 0) {
       toast.success("Regra atualizada", { description: `${data.updatedTransactions} lançamento(s) existente(s) também foram corrigidos.` });
@@ -564,10 +576,11 @@ function RuleModal({
               className="mt-0.5"
             />
             <div className="text-sm">
-              <strong>Aplicar também aos lançamentos já gerados</strong>
+              <strong>Aplicar também ao que ainda está em aberto</strong>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Atualiza valor, descrição, categoria, dono e conta de todos os lançamentos que
-                já saíram desta regra. Desmarque se quer mudar só daqui pra frente.
+                Atualiza valor, descrição, categoria, dono e conta das contas desta regra que
+                ainda não foram pagas. O que já foi pago fica como está. Desmarcado, a mudança
+                vale só para as próximas.
               </p>
             </div>
           </label>
@@ -577,7 +590,7 @@ function RuleModal({
           <div className="text-sm text-destructive bg-destructive/10 p-2 rounded-lg">{error}</div>
         )}
 
-        <div className="flex justify-end gap-2 pt-2">
+        <div className="modal-actions">
           <button type="button" onClick={onClose} className="px-4 py-2 rounded-lg border border-border hover:bg-muted">
             Cancelar
           </button>

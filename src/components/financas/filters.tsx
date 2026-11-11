@@ -1,6 +1,7 @@
 "use client";
 
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import { capFirst } from "@/lib/utils";
 
 export type SegOption<T extends string> = {
   value: T;
@@ -84,8 +85,8 @@ export function MonthStepper({
       >
         <ChevronLeft className="w-4 h-4" />
       </button>
-      <span className="px-3 py-1.5 text-xs font-medium capitalize min-w-[120px] text-center">
-        {monthLabel}
+      <span className="px-3 py-1.5 text-xs font-medium min-w-[120px] text-center">
+        {capFirst(monthLabel)}
       </span>
       <button
         onClick={onNext}

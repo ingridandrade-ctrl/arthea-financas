@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireHousehold, HouseholdAuthError } from "@/lib/financas/session";
-import { parseLocalDate } from "@/lib/financas/dates";
-import { ensureInvoice } from "@/lib/financas/credit-cards";
+import { parseLocalDate, toISODateString, todayBR } from "@/lib/financas/dates";
+import { ensureInvoice, invoicePeriodForDate } from "@/lib/financas/credit-cards";
 
 const VALID_OWNERS = ["PARTNER_A", "PARTNER_B", "COUPLE"];
 
@@ -65,18 +65,42 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     }
     if (typeof body.paid === "boolean") {
       data.paid = body.paid;
-      data.paidAt = body.paid ? (body.paidAt ? parseLocalDate(body.paidAt) : new Date()) : null;
+      data.paidAt = body.paid ? (body.paidAt ? parseLocalDate(body.paidAt) : todayBR()) : null;
     }
 
-    if (data.date && existing.invoiceId) {
-      const accountId = (data.accountId as string | undefined) ?? existing.accountId;
+    // Fatura de uma compra no cartão. Só muda quando a data ou o cartão
+    // mudaram DE VERDADE. A tela de edição sempre manda a data junto, e antes
+    // qualquer edição (trocar dono, categoria...) recalculava a fatura pela
+    // data da compra — a parcela 4/10 importada na fatura de novembro, com
+    // data de compra em maio, pulava pra fatura de junho e "sumia".
+    const newDate = data.date as Date | undefined;
+    const dateChanged =
+      !!newDate && toISODateString(newDate) !== toISODateString(existing.date);
+    const accountChanged = !!data.accountId && data.accountId !== existing.accountId;
+    if (dateChanged || accountChanged) {
       const account = await prisma.finAccount.findFirst({
-        where: { id: accountId, householdId: household.id },
+        where: { id: (data.accountId as string | undefined) ?? existing.accountId, householdId: household.id },
         select: { id: true, type: true, closingDay: true, dueDay: true },
       });
-      if (account && account.type === "CREDIT_CARD") {
-        const inv = await ensureInvoice(household.id, account, data.date as Date);
+      const isCard = account?.type === "CREDIT_CARD" && existing.type === "EXPENSE";
+      if (accountChanged) {
+        // Trocou de conta: fatura do cartão novo, ou nenhuma se saiu do cartão.
+        const inv = isCard ? await ensureInvoice(household.id, account!, newDate ?? existing.date) : null;
         data.invoiceId = inv?.id ?? null;
+      } else if (isCard && existing.invoiceId && account!.closingDay && account!.dueDay) {
+        // Mesmo cartão, data nova. Só acompanha a data se a compra estava na
+        // fatura "natural" da data antiga. Se alguém a colocou em outra fatura
+        // de propósito (importação num mês escolhido, parcela, "mover pra
+        // outro mês"), ela fica onde está.
+        const current = await prisma.finCreditCardInvoice.findFirst({
+          where: { id: existing.invoiceId, householdId: household.id },
+          select: { year: true, month: true },
+        });
+        const natural = invoicePeriodForDate(existing.date, account!.closingDay, account!.dueDay);
+        if (current && current.year === natural.year && current.month === natural.month) {
+          const inv = await ensureInvoice(household.id, account!, newDate!);
+          if (inv) data.invoiceId = inv.id;
+        }
       }
     }
 
