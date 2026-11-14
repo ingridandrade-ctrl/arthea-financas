@@ -5,7 +5,7 @@ import { toast } from "@/components/financas/toaster";
 import { confirmDialog } from "@/components/ui/confirm-dialog";
 import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Plus, Pencil, Trash2, ArrowDownCircle, ArrowUpCircle, ArrowLeftRight, Download, X, CreditCard, Check, Clock, AlertCircle } from "lucide-react";
+import { Plus, Pencil, Trash2, ArrowDownCircle, ArrowUpCircle, ArrowLeftRight, Download, X, CreditCard, Check, Clock, AlertCircle, SlidersHorizontal } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { PageHeader } from "@/components/financas/page-header";
 import {
@@ -155,6 +155,8 @@ export function LancamentosClient() {
   const [limit, setLimit] = useState(PAGE_SIZE);
   const [summary, setSummary] = useState<MovementsSummary | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
+  // No celular os filtros secundários ficam recolhidos atrás de um botão.
+  const [showFilters, setShowFilters] = useState(false);
   const requestSeq = useRef(0);
 
   useEffect(() => {
@@ -336,6 +338,19 @@ export function LancamentosClient() {
     return () => window.removeEventListener("focus", onFocus);
   }, []);
 
+  async function openEdit(m: Movement) {
+    if (m.kind === "invoice") {
+      if (m.invoiceId) setViewingInvoice({ id: m.invoiceId, title: m.description });
+      return;
+    }
+    const res = await fetch(`/api/transactions/${m.id}`);
+    if (!res.ok) {
+      toast.error("Não deu pra abrir essa movimentação. Tente de novo.");
+      return;
+    }
+    setEditing((await res.json()) as Transaction);
+  }
+
   async function remove(id: string) {
     const ok1 = await confirmDialog({ title: "Excluir este lançamento?", variant: "destructive", confirmLabel: "Excluir" }); if (!ok1) return;
     await fetch(`/api/transactions/${id}`, { method: "DELETE" });
@@ -414,14 +429,14 @@ export function LancamentosClient() {
                 if (to) params.set("to", to + "T23:59:59");
                 window.location.href = `/api/export?${params.toString()}`;
               }}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg border border-border hover:bg-muted text-sm"
+              className="flex items-center gap-2 whitespace-nowrap px-3 py-2 rounded-lg border border-border hover:bg-muted text-sm sm:px-4"
             >
               <Download className="w-4 h-4" />
               Exportar CSV
             </button>
             <button
               onClick={() => setCreating(true)}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground font-medium hover:opacity-90 transition"
+              className="flex items-center gap-2 whitespace-nowrap px-3 py-2 rounded-lg bg-primary text-sm text-primary-foreground font-medium hover:opacity-90 transition sm:px-4 sm:text-base"
             >
               <Plus className="w-4 h-4" />
               Nova movimentação
@@ -459,6 +474,22 @@ export function LancamentosClient() {
           </FilterGroup>
         )}
 
+        <button
+          type="button"
+          onClick={() => setShowFilters((v) => !v)}
+          aria-expanded={showFilters}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted md:hidden"
+        >
+          <SlidersHorizontal className="h-3.5 w-3.5" />
+          {showFilters ? "Esconder filtros" : "Filtros"}
+          {activeFilterCount > 0 && (
+            <span className="rounded-full bg-primary px-1.5 text-[10px] text-primary-foreground">
+              {activeFilterCount}
+            </span>
+          )}
+        </button>
+
+        <div className={showFilters ? "contents" : "hidden md:contents"}>
         <FilterGroup label="Tipo">
           <SegControl
             value={type as any}
@@ -552,9 +583,10 @@ export function LancamentosClient() {
             </button>
           </FilterGroup>
         )}
+        </div>
       </FilterBar>
 
-      <div className={`grid grid-cols-1 ${hideBalances ? "" : "sm:grid-cols-3"} gap-3 mb-4`}>
+      <div className={`grid ${hideBalances ? "grid-cols-1" : "grid-cols-3"} gap-2 sm:gap-3 mb-4`}>
         {!hideBalances && (
           <SummaryCard label="Receitas" value={totals.income} positive />
         )}
@@ -564,7 +596,7 @@ export function LancamentosClient() {
         )}
       </div>
 
-      <div className="bg-card border border-border rounded-xl overflow-x-auto">
+      <div className="bg-card border border-border rounded-xl md:overflow-x-auto">
         {loading ? (
           <PageSkeleton variant="rows" rows={8} className="p-4" />
         ) : visibleMovements.length === 0 ? (
@@ -572,7 +604,86 @@ export function LancamentosClient() {
             Nenhuma movimentação no período. Clique em "Nova movimentação" para começar.
           </p>
         ) : (
-          <table className="w-full min-w-[46rem] text-sm">
+          <>
+          {/* Celular: cada movimentação num cartão. A tabela de 8 colunas
+              obrigava a rolar de lado pra ver o valor e os botões. */}
+          <ul className="divide-y divide-border md:hidden">
+            {visibleMovements.map((m) => {
+              const sign = m.type === "EXPENSE" || m.type === "INVOICE" ? "−" : m.type === "INCOME" ? "+" : "";
+              const tone =
+                m.type === "INCOME"
+                  ? "text-success"
+                  : m.type === "EXPENSE" || m.type === "INVOICE"
+                  ? "text-destructive"
+                  : "";
+              const detail =
+                m.kind === "invoice"
+                  ? `${m.itemCount ?? 0} ite${m.itemCount === 1 ? "m" : "ns"}`
+                  : m.type === "TRANSFER"
+                  ? `${m.account.name} → ${m.toAccount?.name ?? "—"}`
+                  : [m.category?.name, m.account.name, ownerLabel(m.owner)].filter(Boolean).join(" · ");
+              const canPay = (m.status === "pending" || m.status === "overdue") && m.type !== "TRANSFER";
+              return (
+                <li key={m.id} className="flex items-start gap-2 px-3 py-3">
+                  <button
+                    type="button"
+                    onClick={() => openEdit(m)}
+                    className="flex min-w-0 flex-1 items-start gap-2.5 text-left"
+                  >
+                    <span className="mt-0.5 shrink-0">
+                      <MovementTypeIcon type={m.type} />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-baseline justify-between gap-3">
+                        <span className="truncate text-sm font-medium">{m.description}</span>
+                        <span className={`shrink-0 text-sm font-semibold tabular-nums ${tone}`}>
+                          {sign}
+                          {formatCurrency(m.amount)}
+                        </span>
+                      </span>
+                      <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+                        {new Date(m.date).toLocaleDateString("pt-BR")} · {detail}
+                      </span>
+                      <span
+                        className={`mt-1 inline-block rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                          m.status === "paid"
+                            ? "bg-success/10 text-success"
+                            : m.status === "overdue"
+                            ? "bg-destructive/10 text-destructive"
+                            : "bg-warning/15 text-warning"
+                        }`}
+                      >
+                        {m.status === "paid" ? "Pago" : m.status === "overdue" ? "Atrasado" : "Pendente"}
+                      </span>
+                    </span>
+                  </button>
+                  <span className="flex shrink-0 flex-col items-center gap-1">
+                    {canPay && (
+                      <button
+                        type="button"
+                        onClick={() => setPaid(m, true)}
+                        aria-label={m.kind === "invoice" ? "Pagar fatura" : "Marcar como paga"}
+                        className="rounded-lg border border-success/40 p-2 text-success hover:bg-success/10"
+                      >
+                        <Check className="h-4 w-4" />
+                      </button>
+                    )}
+                    {m.kind === "transaction" && (
+                      <button
+                        type="button"
+                        onClick={() => remove(m.id)}
+                        aria-label="Excluir"
+                        className="rounded-lg p-2 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    )}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+          <table className="hidden w-full min-w-[46rem] text-sm md:table">
             <thead className="bg-muted/50">
               <tr className="text-left text-muted-foreground">
                 <th className="px-4 py-3 font-medium">Data</th>
@@ -700,6 +811,7 @@ export function LancamentosClient() {
               ))}
             </tbody>
           </table>
+          </>
         )}
         {!loading && hasMore && (
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-4 py-3 text-xs text-muted-foreground">
@@ -1034,10 +1146,10 @@ function SummaryCard({
   negative?: boolean;
 }) {
   return (
-    <div className="bg-card border border-border rounded-xl p-4">
-      <p className="text-xs text-muted-foreground">{label}</p>
+    <div className="min-w-0 bg-card border border-border rounded-xl p-2.5 sm:p-4">
+      <p className="truncate text-[11px] text-muted-foreground sm:text-xs">{label}</p>
       <p
-        className={`text-xl font-bold mt-1 tabular-nums ${
+        className={`text-[13px] font-bold mt-1 tabular-nums sm:text-xl ${
           positive ? "text-success" : negative ? "text-destructive" : ""
         }`}
       >
