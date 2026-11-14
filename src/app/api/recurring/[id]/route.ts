@@ -19,6 +19,20 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     if (typeof body.description === "string" && body.description.trim()) data.description = body.description.trim();
     if (typeof body.notes === "string" || body.notes === null) data.notes = body.notes;
     if (["PARTNER_A", "PARTNER_B", "COUPLE"].includes(body.owner)) data.owner = body.owner;
+    // Quem paga (acerto do casal): null = "não acertar". Só despesa tem.
+    if (existing.type === "EXPENSE") {
+      if (body.paidByOwner === "PARTNER_A" || body.paidByOwner === "PARTNER_B" || body.paidByOwner === null) {
+        data.paidByOwner = body.paidByOwner;
+      }
+      if (typeof body.splitRatio === "number" || body.splitRatio === null) {
+        data.splitRatio =
+          body.splitRatio === null ? null : Math.min(Math.max(body.splitRatio, 0), 1);
+      }
+      // Divisão só vale em despesa do casal com pagador definido.
+      const nextOwner = data.owner ?? existing.owner;
+      const nextPaidBy = data.paidByOwner !== undefined ? data.paidByOwner : existing.paidByOwner;
+      if (!nextPaidBy || nextOwner !== "COUPLE") data.splitRatio = null;
+    }
     if (typeof body.dayOfMonth === "number" || body.dayOfMonth === null) data.dayOfMonth = body.dayOfMonth;
     if (typeof body.dayOfWeek === "number" || body.dayOfWeek === null) data.dayOfWeek = body.dayOfWeek;
     if (typeof body.monthOfYear === "number" || body.monthOfYear === null) data.monthOfYear = body.monthOfYear;
@@ -69,6 +83,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
         if (data.amount !== undefined) txData.amount = data.amount;
         if (data.description !== undefined) txData.description = data.description;
         if (data.owner !== undefined) txData.owner = data.owner;
+        if (data.paidByOwner !== undefined) txData.paidByOwner = data.paidByOwner;
+        if (data.splitRatio !== undefined) txData.splitRatio = data.splitRatio;
         if (data.categoryId !== undefined) txData.categoryId = data.categoryId;
         if (data.accountId !== undefined) txData.accountId = data.accountId;
         if (data.notes !== undefined) txData.notes = data.notes;

@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
-import { ensureFinanceSchema } from "@/lib/financas/migrate";
+import { ensureFinanceSchema, ensureFinanceSchemaUpToDate } from "@/lib/financas/migrate";
 
 const COOKIE_NAME = "financas_session";
 const MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
@@ -123,6 +123,7 @@ export async function getCurrentUser() {
 }
 
 export async function requireHousehold() {
+  await ensureFinanceSchemaUpToDate();
   const household = await getCurrentHousehold();
   if (!household) {
     throw new HouseholdAuthError("Não autenticado");

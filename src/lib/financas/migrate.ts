@@ -210,7 +210,36 @@ const STATEMENTS: string[] = [
   `ALTER TABLE "FinTransaction" ADD COLUMN IF NOT EXISTS "installmentTotal" INTEGER;`,
   `ALTER TABLE "FinTransaction" ADD COLUMN IF NOT EXISTS "installmentProjected" BOOLEAN NOT NULL DEFAULT false;`,
   `CREATE INDEX IF NOT EXISTS "FinTransaction_installmentGroupId_idx" ON "FinTransaction"("installmentGroupId");`,
+
+  // Recorrência com "quem paga" (acerto do casal). Roda UMA vez, quando a
+  // coluna ainda não existe: cria as colunas e preenche as regras antigas com
+  // a mesma regra do lançamento manual — despesa do casal paga de uma conta
+  // que é de uma pessoa só = foi essa pessoa que pagou. As contas dessas
+  // regras que ainda estão em aberto recebem o mesmo "quem paga" (só entram
+  // no acerto quando forem marcadas como pagas). Depois disso o que vale é o
+  // que estiver escolhido na regra; por isso NÃO pode rodar de novo.
+  `DO $$ BEGIN
+    IF NOT EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema = current_schema() AND table_name = 'FinRecurringRule' AND column_name = 'paidByOwner'
+    ) THEN
+      ALTER TABLE "FinRecurringRule" ADD COLUMN "paidByOwner" "FinOwner";
+      ALTER TABLE "FinRecurringRule" ADD COLUMN IF NOT EXISTS "splitRatio" DOUBLE PRECISION;
+      UPDATE "FinRecurringRule" r SET "paidByOwner" = a."owner"
+        FROM "FinAccount" a
+        WHERE a."id" = r."accountId" AND r."type" = 'EXPENSE' AND r."owner" = 'COUPLE'
+          AND a."owner" IN ('PARTNER_A', 'PARTNER_B');
+      UPDATE "FinTransaction" t SET "paidByOwner" = r."paidByOwner"
+        FROM "FinRecurringRule" r
+        WHERE t."recurringId" = r."id" AND t."type" = 'EXPENSE' AND t."paid" = false
+          AND t."invoiceId" IS NULL AND t."paidByOwner" IS NULL AND r."paidByOwner" IS NOT NULL;
+    END IF;
+  EXCEPTION WHEN duplicate_column THEN NULL;
+  END $$;`,
 ];
+
+/** Última coluna adicionada ao schema — serve de "versão" pro atalho abaixo. */
+const LATEST_COLUMN = { table: "FinRecurringRule", column: "paidByOwner" };
 
 let migrationPromise: Promise<void> | null = null;
 
@@ -222,6 +251,34 @@ export async function ensureFinanceSchema(): Promise<void> {
     });
   }
   return migrationPromise;
+}
+
+let upToDatePromise: Promise<void> | null = null;
+
+/**
+ * Versão barata do ensureFinanceSchema pro caminho quente (toda abertura do
+ * app e toda chamada de API): uma consulta por instância pra ver se o banco
+ * já tem a coluna mais nova; só roda o DDL inteiro se estiver atrás.
+ *
+ * Sem isso, quem já estava logado no momento de um deploy que adiciona
+ * coluna (sessão dura 30 dias, ninguém passa pelo login) batia em "coluna
+ * não existe" até alguém fazer login de novo.
+ */
+export async function ensureFinanceSchemaUpToDate(): Promise<void> {
+  if (!upToDatePromise) {
+    upToDatePromise = (async () => {
+      const rows = await prisma.$queryRaw<{ ok: number }[]>`
+        SELECT 1 AS ok FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND table_name = ${LATEST_COLUMN.table} AND column_name = ${LATEST_COLUMN.column}
+        LIMIT 1`;
+      if (rows.length === 0) await ensureFinanceSchema();
+    })().catch((err) => {
+      upToDatePromise = null;
+      throw err;
+    });
+  }
+  return upToDatePromise;
 }
 
 async function runMigration(): Promise<void> {

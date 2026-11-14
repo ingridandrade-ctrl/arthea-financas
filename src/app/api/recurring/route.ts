@@ -46,6 +46,8 @@ export async function POST(req: Request) {
       monthOfYear,
       startDate,
       endDate,
+      paidByOwner,
+      splitRatio,
     } = body ?? {};
 
     if (typeof name !== "string" || !name.trim()) return NextResponse.json({ error: "Nome obrigatório" }, { status: 400 });
@@ -66,6 +68,12 @@ export async function POST(req: Request) {
       if (!dest) return NextResponse.json({ error: "Conta de destino inválida" }, { status: 400 });
     }
 
+    const finalOwner = VALID_OWNERS.includes(owner) ? owner : "COUPLE";
+    const finalPaidBy =
+      type === "EXPENSE" && (paidByOwner === "PARTNER_A" || paidByOwner === "PARTNER_B")
+        ? paidByOwner
+        : null;
+
     const rule = await prisma.finRecurringRule.create({
       data: {
         householdId: household.id,
@@ -74,7 +82,14 @@ export async function POST(req: Request) {
         amount,
         description: finalDescription,
         notes: typeof notes === "string" ? notes : null,
-        owner: VALID_OWNERS.includes(owner) ? owner : "COUPLE",
+        owner: finalOwner,
+        // Quem paga (acerto do casal): só em despesa. Divisão diferente de
+        // meio a meio só em despesa do casal com pagador definido.
+        paidByOwner: finalPaidBy,
+        splitRatio:
+          finalPaidBy && finalOwner === "COUPLE" && typeof splitRatio === "number"
+            ? Math.min(Math.max(splitRatio, 0), 1)
+            : null,
         accountId,
         toAccountId: type === "TRANSFER" ? toAccountId : null,
         categoryId: type === "TRANSFER" ? null : (categoryId || null),

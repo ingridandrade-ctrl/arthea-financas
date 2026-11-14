@@ -219,6 +219,10 @@ model FinRecurringRule {
   description     String
   notes           String?
   owner           FinOwner               @default(COUPLE)
+  // Quem paga essa conta (acerto do casal). Vai pra cada lançamento gerado;
+  // null = "não acertar".
+  paidByOwner     FinOwner?
+  splitRatio      Float?
   accountId       String
   account         FinAccount             @relation("RecurringFromAccount", fields: [accountId], references: [id])
   toAccountId     String?

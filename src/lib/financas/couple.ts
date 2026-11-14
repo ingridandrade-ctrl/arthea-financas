@@ -57,6 +57,8 @@ export async function computeCoupleBalance(
       owner: true,
       paidByOwner: true,
       splitRatio: true,
+      paid: true,
+      recurringId: true,
       date: true,
       description: true,
       invoiceId: true,
@@ -150,6 +152,10 @@ export async function computeCoupleBalance(
   for (const tx of transactions) {
     const paidBy = tx.paidByOwner;
     if (paidBy !== "PARTNER_A" && paidBy !== "PARTNER_B") continue;
+    // Conta de recorrência nasce pendente e já com "quem paga" anotado, pro
+    // mês inteiro. Enquanto ninguém pagou, ninguém deve nada: ela só entra no
+    // acerto depois de marcada como paga. (Compra no cartão segue a fatura.)
+    if (tx.recurringId && !tx.paid && !tx.invoiceId) continue;
 
     if (tx.owner === "COUPLE") {
       const r = typeof tx.splitRatio === "number" ? tx.splitRatio : 0.5;

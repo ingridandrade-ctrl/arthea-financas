@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { ensureInvoice } from "./credit-cards";
 import { endOfTodayBR, nowPartsBR } from "./dates";
+import { ensureFinanceSchemaUpToDate } from "./migrate";
 
 type RecurringRule = {
   id: string;
@@ -10,6 +11,8 @@ type RecurringRule = {
   description: string;
   notes: string | null;
   owner: "PARTNER_A" | "PARTNER_B" | "COUPLE";
+  paidByOwner: "PARTNER_A" | "PARTNER_B" | "COUPLE" | null;
+  splitRatio: number | null;
   accountId: string;
   toAccountId: string | null;
   categoryId: string | null;
@@ -87,6 +90,27 @@ export function nextOccurrencesUntil(rule: RecurringRule, until: Date): Date[] {
   return occurrences;
 }
 
+type PaidByFields = {
+  type: string;
+  owner: string;
+  paidByOwner: string | null;
+  splitRatio: number | null;
+};
+
+/** Só despesa tem "quem pagou", e só pode ser uma das duas pessoas. */
+export function paidByFromRule(rule: PaidByFields): "PARTNER_A" | "PARTNER_B" | null {
+  if (rule.type !== "EXPENSE") return null;
+  return rule.paidByOwner === "PARTNER_A" || rule.paidByOwner === "PARTNER_B"
+    ? rule.paidByOwner
+    : null;
+}
+
+/** Divisão diferente de meio a meio só faz sentido em despesa do casal com pagador. */
+export function splitFromRule(rule: PaidByFields): number | null {
+  if (!paidByFromRule(rule) || rule.owner !== "COUPLE") return null;
+  return typeof rule.splitRatio === "number" ? Math.min(Math.max(rule.splitRatio, 0), 1) : null;
+}
+
 function normalizeText(text: string): string {
   return text
     .normalize("NFD")
@@ -116,6 +140,8 @@ export async function runRecurringForHousehold(
   householdId: string,
   opts: { backfillRuleId?: string } = {}
 ) {
+  // Roda antes de qualquer tela; garante que o banco já tem as colunas novas.
+  await ensureFinanceSchemaUpToDate();
   const rules = await prisma.finRecurringRule.findMany({
     where: { householdId, active: true },
     include: {
@@ -191,6 +217,10 @@ export async function runRecurringForHousehold(
             description: rule.description,
             notes: rule.notes,
             owner: rule.owner,
+            // "Quem paga" da regra. Em conta pendente fica só anotado: ela
+            // entra no acerto do casal quando for marcada como paga.
+            paidByOwner: paidByFromRule(rule),
+            splitRatio: splitFromRule(rule),
             accountId: rule.accountId,
             toAccountId: rule.type === "TRANSFER" ? rule.toAccountId : null,
             categoryId: rule.type === "TRANSFER" ? null : rule.categoryId,

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { toast } from "@/components/financas/toaster";
 import { confirmDialog } from "@/components/ui/confirm-dialog";
-import { CreditCard, CheckCircle2, Clock, AlertTriangle, Lock, Sparkles, Trash2, Pencil, CalendarClock, ArrowRightLeft } from "lucide-react";
+import { CreditCard, CheckCircle2, Clock, AlertTriangle, Lock, Sparkles, Trash2, Pencil, CalendarClock, ArrowRightLeft, ChevronDown, MoreHorizontal } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { PageHeader } from "@/components/financas/page-header";
 import { PasswordInput } from "@/components/financas/password-input";
@@ -108,6 +108,10 @@ export function CartoesClient() {
   const [reviewingInvoice, setReviewingInvoice] = useState<Invoice | null>(null);
   const [selectedTxIds, setSelectedTxIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
+  // Faturas abertas/fechadas na tela (só a que está pra pagar abre sozinha) e
+  // qual menu "mais ações" está aberto.
+  const [openInv, setOpenInv] = useState<Record<string, boolean>>({});
+  const [menuInv, setMenuInv] = useState<string | null>(null);
 
   // Filtros por fatura (chaveado por invoiceId). Permitem filtrar as compras
   // já no sistema por dono/categoria/texto e ver somatórios.
@@ -223,6 +227,26 @@ export function CartoesClient() {
           return true;
         })
     : [];
+  // Ordem da tela: primeiro a fatura pra pagar agora (a não paga mais antiga
+  // com valor), depois as próximas em ordem de vencimento, e por fim as já
+  // pagas, da mais recente pra mais antiga. Antes vinha tudo do futuro pro
+  // passado, e a fatura do mês ficava em terceiro, embaixo de duas projeções.
+  const byDue = (a: Invoice, b: Invoice) =>
+    new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+  const unpaidInvoices = visible.filter((i) => i.status !== "PAID").sort(byDue);
+  const currentInvoice = unpaidInvoices.find((i) => i.total > 0) ?? unpaidInvoices[0] ?? null;
+  const ordered: { inv: Invoice; section: string }[] = [
+    ...(currentInvoice ? [{ inv: currentInvoice, section: "Para pagar agora" }] : []),
+    ...unpaidInvoices
+      .filter((i) => i.id !== currentInvoice?.id)
+      .map((inv) => ({ inv, section: "Próximas faturas" })),
+    ...visible
+      .filter((i) => i.status === "PAID")
+      .sort((a, b) => byDue(b, a))
+      .map((inv) => ({ inv, section: "Faturas pagas" })),
+  ];
+  const isInvOpen = (inv: Invoice) => openInv[inv.id] ?? inv.id === currentInvoice?.id;
+
   const projectedCount = invoices.reduce(
     (s, inv) => s + inv.transactions.filter((t) => t.installmentProjected).length,
     0
@@ -406,94 +430,132 @@ export function CartoesClient() {
             </div>
           ) : (
             <div className="space-y-3">
-              {visible.map((inv) => {
+              {ordered.map(({ inv, section }, idx) => {
                 const Icon = STATUS_ICON[inv.status];
+                const open = isInvOpen(inv);
+                const showSection = idx === 0 || ordered[idx - 1].section !== section;
+                const hasTx = inv.transactions.length > 0;
                 return (
-                  <div key={inv.id} className="bg-card border border-border rounded-xl">
-                    <div className="p-5 flex items-start justify-between flex-wrap gap-4">
-                      <div>
-                        <div className="flex items-center gap-2 mb-1">
-                          <h3 className="text-lg font-semibold">
-                            {capFirst(
-                              new Date(inv.dueDate).toLocaleDateString("pt-BR", {
-                                month: "long",
-                                year: "numeric",
-                              })
-                            )}
-                          </h3>
-                          <span
-                            className={`inline-flex items-center ${STATUS_COLOR[inv.status]}`}
-                            title={STATUS_LABEL[inv.status]}
-                            aria-label={STATUS_LABEL[inv.status]}
-                          >
-                            <Icon className="w-4 h-4" />
-                          </span>
-                        </div>
-                        <div className="text-xs text-muted-foreground space-x-3">
-                          <span>Fechamento: {new Date(inv.closingDate).toLocaleDateString("pt-BR")}</span>
-                          <span>Vencimento: {new Date(inv.dueDate).toLocaleDateString("pt-BR")}</span>
-                          {inv.paidAt && (
-                            <span>
-                              Paga em {new Date(inv.paidAt).toLocaleDateString("pt-BR")}
-                              {inv.paymentAccount && ` via ${inv.paymentAccount.name}`}
+                  <div key={inv.id}>
+                    {showSection && (
+                      <p className={`mb-2 px-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground ${idx > 0 ? "mt-6" : ""}`}>
+                        {section}
+                      </p>
+                    )}
+                  <div className="bg-card border border-border rounded-xl">
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-3 p-4 sm:p-5">
+                      <button
+                        type="button"
+                        onClick={() => setOpenInv((prev) => ({ ...prev, [inv.id]: !open }))}
+                        aria-expanded={open}
+                        className="flex min-w-0 flex-1 basis-full items-center gap-3 text-left sm:basis-0"
+                      >
+                        <ChevronDown
+                          className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${open ? "" : "-rotate-90"}`}
+                        />
+                        <span className="min-w-0">
+                          <span className="flex flex-wrap items-center gap-2">
+                            <span className="text-lg font-semibold">
+                              {capFirst(
+                                new Date(inv.dueDate).toLocaleDateString("pt-BR", {
+                                  month: "long",
+                                  year: "numeric",
+                                })
+                              )}
                             </span>
-                          )}
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-xs text-muted-foreground">Total</p>
-                        <p className="text-2xl font-bold tabular-nums">{formatCurrency(inv.total)}</p>
-                        <div className="flex flex-col items-end gap-1 mt-2">
-                          {inv.status !== "PAID" && inv.total > 0 && (
-                            <button
-                              onClick={() => setPaying(inv)}
-                              className="text-sm px-3 py-1.5 rounded-lg bg-primary text-primary-foreground hover:opacity-90"
+                            <span
+                              className={`inline-flex items-center gap-1 text-xs font-medium ${STATUS_COLOR[inv.status]}`}
                             >
-                              Marcar como paga
-                            </button>
-                          )}
-                          {inv.transactions.length > 0 && (
-                            <button
-                              onClick={() => setBulkDateInvoice(inv)}
-                              className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg border border-border hover:bg-muted text-muted-foreground"
-                              title="Aplicar uma única data a todos os lançamentos desta fatura"
-                            >
-                              <CalendarClock className="w-3.5 h-3.5" />
-                              Definir data única
-                            </button>
-                          )}
-                          {inv.transactions.length > 0 && (
-                            <button
-                              onClick={() => setMovingInvoice(inv)}
-                              className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg border border-border hover:bg-muted text-muted-foreground"
-                              title="Mover todas as compras desta fatura para outro mês"
-                            >
-                              <ArrowRightLeft className="w-3.5 h-3.5" />
-                              Mover pra outro mês
-                            </button>
-                          )}
-                          {inv.transactions.length > 0 && (
-                            <button
-                              onClick={() => setReviewingInvoice(inv)}
-                              className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg border border-primary/40 text-primary hover:bg-primary/10"
-                              title="Re-analisar o PDF e ver o que falta ou sobra"
-                            >
-                              <Sparkles className="w-3.5 h-3.5" />
-                              Revisar com IA
-                            </button>
-                          )}
+                              <Icon className="h-3.5 w-3.5" />
+                              {STATUS_LABEL[inv.status]}
+                            </span>
+                          </span>
+                          <span className="mt-0.5 flex flex-wrap gap-x-3 text-xs text-muted-foreground">
+                            <span>Vence {new Date(inv.dueDate).toLocaleDateString("pt-BR")}</span>
+                            <span>Fecha {new Date(inv.closingDate).toLocaleDateString("pt-BR")}</span>
+                            <span>
+                              {inv.transactions.length} compra{inv.transactions.length === 1 ? "" : "s"}
+                            </span>
+                            {inv.paidAt && (
+                              <span>
+                                Paga em {new Date(inv.paidAt).toLocaleDateString("pt-BR")}
+                                {inv.paymentAccount && ` via ${inv.paymentAccount.name}`}
+                              </span>
+                            )}
+                          </span>
+                        </span>
+                      </button>
+                      <div className="flex items-center gap-2">
+                        <p className="mr-1 text-xl font-bold tabular-nums sm:text-2xl">
+                          {formatCurrency(inv.total)}
+                        </p>
+                        {inv.status !== "PAID" && inv.total > 0 && (
                           <button
-                            onClick={() => deleteInvoice(inv)}
-                            className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg border border-destructive/30 hover:bg-destructive/10 text-destructive"
-                            title="Excluir esta fatura e todos os lançamentos dela"
+                            onClick={() => setPaying(inv)}
+                            className="whitespace-nowrap rounded-lg bg-primary px-3 py-1.5 text-sm text-primary-foreground hover:opacity-90"
                           >
-                            <Trash2 className="w-3.5 h-3.5" />
-                            Excluir fatura
+                            Marcar como paga
                           </button>
+                        )}
+                        <div className="relative">
+                          <button
+                            type="button"
+                            onClick={() => setMenuInv(menuInv === inv.id ? null : inv.id)}
+                            aria-label="Mais ações da fatura"
+                            aria-expanded={menuInv === inv.id}
+                            className="rounded-lg border border-border p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                          >
+                            <MoreHorizontal className="h-4 w-4" />
+                          </button>
+                          {menuInv === inv.id && (
+                            <>
+                              <div className="fixed inset-0 z-10" onClick={() => setMenuInv(null)} aria-hidden />
+                              <div className="absolute right-0 top-full z-20 mt-1 w-56 rounded-xl border border-border bg-card p-1 text-sm shadow-lg">
+                                {hasTx && (
+                                  <button
+                                    onClick={() => { setMenuInv(null); setReviewingInvoice(inv); }}
+                                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-primary hover:bg-primary/10"
+                                    title="Re-analisar o PDF e ver o que falta ou sobra"
+                                  >
+                                    <Sparkles className="h-4 w-4" />
+                                    Revisar com IA
+                                  </button>
+                                )}
+                                {hasTx && (
+                                  <button
+                                    onClick={() => { setMenuInv(null); setMovingInvoice(inv); }}
+                                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left hover:bg-muted"
+                                    title="Mover todas as compras desta fatura para outro mês"
+                                  >
+                                    <ArrowRightLeft className="h-4 w-4 text-muted-foreground" />
+                                    Mover pra outro mês
+                                  </button>
+                                )}
+                                {hasTx && (
+                                  <button
+                                    onClick={() => { setMenuInv(null); setBulkDateInvoice(inv); }}
+                                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left hover:bg-muted"
+                                    title="Aplicar uma única data a todos os lançamentos desta fatura"
+                                  >
+                                    <CalendarClock className="h-4 w-4 text-muted-foreground" />
+                                    Definir data única
+                                  </button>
+                                )}
+                                <button
+                                  onClick={() => { setMenuInv(null); deleteInvoice(inv); }}
+                                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-destructive hover:bg-destructive/10"
+                                  title="Excluir esta fatura e todos os lançamentos dela"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                  Excluir fatura
+                                </button>
+                              </div>
+                            </>
+                          )}
                         </div>
                       </div>
                     </div>
-                    {inv.transactions.length > 0 && (() => {
+                    {open && hasTx && (() => {
                       const filter = getFilter(inv.id);
                       const filterActive = isFilterActive(filter);
                       const filteredTxs = inv.transactions.filter((t) => {
@@ -696,6 +758,7 @@ export function CartoesClient() {
                       </div>
                       );
                     })()}
+                  </div>
                   </div>
                 );
               })}

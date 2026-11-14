@@ -9,7 +9,7 @@ import { PageHeader } from "@/components/financas/page-header";
 import { formatCurrency } from "@/lib/utils";
 import { PageSkeleton } from "@/components/financas/page-skeleton";
 
-type Account = { id: string; name: string; color: string; type: string; archived: boolean };
+type Account = { id: string; name: string; color: string; type: string; archived: boolean; owner?: "PARTNER_A" | "PARTNER_B" | "COUPLE" };
 type Category = { id: string; name: string; kind: "INCOME" | "EXPENSE"; color: string; archived: boolean };
 type Settings = { partnerAName: string; partnerBName: string };
 
@@ -21,6 +21,8 @@ type Rule = {
   description: string;
   notes: string | null;
   owner: "PARTNER_A" | "PARTNER_B" | "COUPLE";
+  paidByOwner: "PARTNER_A" | "PARTNER_B" | "COUPLE" | null;
+  splitRatio: number | null;
   account: { id: string; name: string; color: string };
   toAccountId: string | null;
   category: { id: string; name: string; color: string } | null;
@@ -183,7 +185,22 @@ export function RecorrenciasClient() {
                       <span className="text-xs text-muted-foreground italic">sem categoria</span>
                     )}
                   </td>
-                  <td className="px-4 py-3">{ownerLabel(r.owner)}</td>
+                  <td className="px-4 py-3">
+                    {ownerLabel(r.owner)}
+                    {r.type === "EXPENSE" &&
+                      (r.paidByOwner === "PARTNER_A" || r.paidByOwner === "PARTNER_B") && (
+                        <span className="block text-xs text-muted-foreground">
+                          {ownerLabel(r.paidByOwner)} paga
+                          {r.owner === "COUPLE" &&
+                            typeof r.splitRatio === "number" &&
+                            Math.round(r.splitRatio * 100) !== 50 &&
+                            ` · ${Math.round(r.splitRatio * 100)}/${100 - Math.round(r.splitRatio * 100)}`}
+                        </span>
+                      )}
+                    {r.type === "EXPENSE" && r.owner === "COUPLE" && !r.paidByOwner && (
+                      <span className="block text-xs text-muted-foreground/70">fora do acerto</span>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-right tabular-nums font-medium">
                     {formatCurrency(r.amount)}
                   </td>
@@ -245,6 +262,42 @@ function describeFrequency(r: Rule): string {
   return `Anual, mês ${r.monthOfYear ?? "—"} dia ${r.dayOfMonth ?? "—"}`;
 }
 
+/** Explica, em uma frase, o que a escolha de "quem paga" faz no acerto do casal. */
+function payerHint({
+  owner,
+  paidByOwner,
+  splitPercentA,
+  amount,
+  isCard,
+  a,
+  b,
+}: {
+  owner: "PARTNER_A" | "PARTNER_B" | "COUPLE";
+  paidByOwner: "PARTNER_A" | "PARTNER_B" | "";
+  splitPercentA: number;
+  amount: number;
+  isCard: boolean;
+  a: string;
+  b: string;
+}): string {
+  if (!paidByOwner) return "Essa conta fica fora do acerto do casal.";
+  const payer = paidByOwner === "PARTNER_A" ? a : b;
+  const other = paidByOwner === "PARTNER_A" ? b : a;
+  const when = isCard
+    ? "Entra no acerto junto com a fatura do cartão."
+    : "Entra no acerto quando a conta for marcada como paga.";
+  if (owner === paidByOwner) {
+    return `Despesa de ${payer}, paga por ${payer}: não gera acerto.`;
+  }
+  // Parte que cabe a quem NÃO pagou.
+  const otherShare =
+    owner === "COUPLE" ? (paidByOwner === "PARTNER_A" ? 100 - splitPercentA : splitPercentA) / 100 : 1;
+  if (otherShare <= 0) return `${payer} paga e fica com a conta inteira: não gera acerto.`;
+  const value = Number.isFinite(amount) && amount > 0 ? ` (${formatCurrency(amount * otherShare)})` : "";
+  const what = owner === "COUPLE" ? (otherShare === 0.5 ? "metade" : `${Math.round(otherShare * 100)}%`) : "o valor inteiro";
+  return `${payer} paga; ${other} fica devendo ${what}${value}. ${when}`;
+}
+
 function todayISO() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -282,6 +335,23 @@ function RuleModal({
   const [endDate, setEndDate] = useState(rule?.endDate ? rule.endDate.slice(0, 10) : "");
   const [notes, setNotes] = useState(rule?.notes || "");
   const [applyToExisting, setApplyToExisting] = useState(false);
+  // Quem paga (acerto do casal). Regra nova já vem sugerida pelo dono da
+  // conta: conta da Ingrid = Ingrid paga. Dá pra trocar ou tirar.
+  const payerOfAccount = (id: string): "PARTNER_A" | "PARTNER_B" | "" => {
+    const o = accounts.find((a) => a.id === id)?.owner;
+    return o === "PARTNER_A" || o === "PARTNER_B" ? o : "";
+  };
+  const [paidByOwner, setPaidByOwner] = useState<"PARTNER_A" | "PARTNER_B" | "">(
+    rule
+      ? rule.paidByOwner === "PARTNER_A" || rule.paidByOwner === "PARTNER_B"
+        ? rule.paidByOwner
+        : ""
+      : payerOfAccount(accountId)
+  );
+  const [paidByTouched, setPaidByTouched] = useState(false);
+  const [splitPercentA, setSplitPercentA] = useState(
+    typeof rule?.splitRatio === "number" ? Math.round(rule.splitRatio * 100) : 50
+  );
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -311,6 +381,13 @@ function RuleModal({
       monthOfYear: frequency === "YEARLY" ? parseInt(monthOfYear, 10) : null,
       endDate: endDate || null,
     };
+    if ((editing ? rule!.type : type) === "EXPENSE") {
+      payload.paidByOwner = paidByOwner || null;
+      payload.splitRatio =
+        paidByOwner && owner === "COUPLE"
+          ? Math.min(Math.max(splitPercentA, 0), 100) / 100
+          : null;
+    }
     if (editing) {
       payload.accountId = accountId;
       payload.categoryId = rule!.type === "TRANSFER" ? null : (categoryId || null);
@@ -464,7 +541,10 @@ function RuleModal({
           <select
             required
             value={accountId}
-            onChange={(e) => setAccountId(e.target.value)}
+            onChange={(e) => {
+              setAccountId(e.target.value);
+              if (!editing && !paidByTouched) setPaidByOwner(payerOfAccount(e.target.value));
+            }}
             className="w-full px-3 py-2 rounded-lg border border-border bg-background"
           >
             {accounts.filter((a) => !a.archived).map((a) => (
@@ -528,6 +608,62 @@ function RuleModal({
           </div>
         </div>
 
+        {(editing ? rule!.type : type) === "EXPENSE" && (
+          <div className="bg-muted/30 rounded-lg p-3 space-y-3">
+            <div>
+              <label className="block text-sm font-medium mb-1">Quem paga</label>
+              <div className="grid grid-cols-3 gap-2">
+                {(["", "PARTNER_A", "PARTNER_B"] as const).map((p) => (
+                  <button
+                    key={p || "none"}
+                    type="button"
+                    onClick={() => {
+                      setPaidByOwner(p);
+                      setPaidByTouched(true);
+                    }}
+                    className={`px-3 py-1.5 rounded-lg border text-xs ${
+                      paidByOwner === p ? "bg-primary text-primary-foreground border-primary" : "border-border hover:bg-muted"
+                    }`}
+                  >
+                    {p === ""
+                      ? "Não acertar"
+                      : p === "PARTNER_A"
+                      ? settings?.partnerAName ?? "Pessoa A"
+                      : settings?.partnerBName ?? "Pessoa B"}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {owner === "COUPLE" && paidByOwner && (
+              <div>
+                <label className="block text-xs font-medium mb-1">
+                  Divisão: {settings?.partnerAName ?? "A"} {splitPercentA}% / {settings?.partnerBName ?? "B"} {100 - splitPercentA}%
+                </label>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={5}
+                  value={splitPercentA}
+                  onChange={(e) => setSplitPercentA(parseInt(e.target.value, 10))}
+                  className="w-full"
+                />
+              </div>
+            )}
+            <p className="text-xs text-muted-foreground">
+              {payerHint({
+                owner,
+                paidByOwner,
+                splitPercentA,
+                amount: parseFloat(amount.replace(",", ".")),
+                isCard: accounts.find((x) => x.id === accountId)?.type === "CREDIT_CARD",
+                a: settings?.partnerAName ?? "Pessoa A",
+                b: settings?.partnerBName ?? "Pessoa B",
+              })}
+            </p>
+          </div>
+        )}
+
         <div className="grid grid-cols-2 gap-3">
           {!editing && (
             <div>
@@ -578,8 +714,8 @@ function RuleModal({
             <div className="text-sm">
               <strong>Aplicar também ao que ainda está em aberto</strong>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Atualiza valor, descrição, categoria, dono e conta das contas desta regra que
-                ainda não foram pagas. O que já foi pago fica como está. Desmarcado, a mudança
+                Atualiza valor, descrição, categoria, dono, quem paga e conta das contas desta
+                regra que ainda não foram pagas. O que já foi pago fica como está. Desmarcado, a mudança
                 vale só para as próximas.
               </p>
             </div>
